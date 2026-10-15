@@ -40,9 +40,10 @@ header{
   padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
   border-bottom:1px solid var(--line);background:var(--ink);
 }
-.brand{display:flex;align-items:baseline;gap:8px;min-width:0}
-.brand b{font-size:17px;font-weight:700;letter-spacing:.01em}
-.brand span{font:500 10px var(--mono);color:var(--muted);letter-spacing:.1em;text-transform:uppercase;white-space:nowrap}
+/* Map | Live: record the walk that is your map, or walk on it and see where you are */
+.tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:3px;width:150px;flex:none;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:3px}
+.tabs button{height:30px;border:0;border-radius:7px;background:none;color:var(--muted);font-weight:700;font-size:14px}
+.tabs button[aria-pressed="true"]{background:var(--panel-2);color:var(--text)}
 .hdr-right{display:flex;align-items:center;gap:10px}
 .status{display:flex;align-items:center;gap:7px;font:600 12px var(--mono);font-variant-numeric:tabular-nums;color:var(--muted);
   padding:6px 10px;border:1px solid var(--line);border-radius:999px;white-space:nowrap}
@@ -67,6 +68,12 @@ main{flex:1;position:relative;min-height:0;overflow:hidden}
 .empty{position:absolute;left:50%;top:52%;transform:translate(-50%,-50%);width:min(320px,calc(100% - 32px));text-align:center;pointer-events:none}
 .empty h1{font-size:20px;margin:0 0 8px;text-wrap:balance}
 .empty p{margin:0;color:var(--muted);line-height:1.45;text-wrap:balance}
+.chip.warn{background:var(--rec);color:#fff}
+/* on the Live tab the map is showing, so the instructions sit at the bottom instead of over it */
+.empty.card{top:auto;bottom:14px;transform:translateX(-50%);width:min(420px,calc(100% - 32px));text-align:left;background:rgba(16,36,58,.94);
+  border:1px solid var(--line);border-radius:12px;padding:12px 14px;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.empty.card h1{font-size:16px;margin-bottom:4px}
+.empty.card p{font-size:13.5px;text-wrap:pretty}
 .banner{position:absolute;left:max(16px,env(safe-area-inset-left,0px));right:max(16px,env(safe-area-inset-right,0px));top:86px;
   display:flex;gap:10px;align-items:flex-start;background:#3a1714;border:1px solid rgba(255,107,90,.5);color:#ffd9d3;
   border-radius:10px;padding:10px 12px;line-height:1.4;font-size:14px;z-index:2}
@@ -133,7 +140,7 @@ label.file input{position:absolute;inset:0;opacity:0}
 </head>
 <body>
 <header>
-  <div class="brand"><b>Pathtrace</b><span>step tracer</span></div>
+  <div class="tabs" id="modeSeg" role="group" aria-label="Mode"><button data-m="map">Map</button><button data-m="live">Live</button></div>
   <div class="hdr-right">
     <div id="status" class="status"><i></i><span id="statusText">Idle</span></div>
     <button id="btnSettings" class="icon-btn" aria-label="Settings">
@@ -151,9 +158,10 @@ label.file input{position:absolute;inset:0;opacity:0}
     <div class="stat"><div class="k">Heading</div><div class="v"><span id="vHead">000</span><small>°</small></div></div>
   </div>
   <div id="tilt" class="chip" hidden>Hold the phone flatter</div>
+  <div id="offMap" class="chip warn" hidden>Off the map</div>
   <div id="empty" class="empty">
-    <h1>Tap Start, then walk</h1>
-    <p>Hold the phone flat in front of you, screen up. Begin facing along a wall so the grid lines up with your rooms.</p>
+    <h1 id="emptyH">Tap Start, then walk</h1>
+    <p id="emptyP">Hold the phone flat in front of you, screen up. Begin facing along a wall so the grid lines up with your rooms.</p>
   </div>
   <div id="banner" class="banner" hidden><span id="bannerText"></span><button id="bannerClose" aria-label="Dismiss">×</button></div>
   <div id="toast" class="toast" hidden></div>
@@ -214,7 +222,7 @@ label.file input{position:absolute;inset:0;opacity:0}
   <div class="field">
     <label>Join paths you walk again</label>
     <div class="seg four" id="joinSeg" role="group" aria-label="Join paths you walk again"><button data-j="off">Off</button><button data-j="low">Low</button><button data-j="normal">Normal</button><button data-j="high">High</button></div>
-    <p class="hint">Lines closer than about 1 m count as the same path. When you turn round (on the spot, on a curve, or after stopping to look), the trace follows your path back. When you walk along an earlier stretch, it snaps onto it and spreads the error over the steps in between. Lower this if separate paths get joined; raise it if a return path still runs beside the old one.</p>
+    <p class="hint">Lines closer than about 1 m count as the same path. When you turn round (on the spot, on a curve, or after stopping to look), the trace follows your path back. When you walk along an earlier stretch, it snaps onto it and spreads the error over the steps in between. Lower this if separate paths get joined; raise it if a return path still runs beside the old one. On the Live tab it never goes fully off, since joining is how your walk finds the map.</p>
   </div>
 
   <h3 class="group">Sensors and data</h3>
@@ -230,7 +238,7 @@ label.file input{position:absolute;inset:0;opacity:0}
       <label class="btn small file">Open walk file<input id="importFile" type="file" accept="application/json,.json"></label>
       <button id="demoBtn" class="btn small">Load demo walk</button>
     </div>
-    <p class="hint">Export saves a picture and a .json of the walk. Open a .json here to look at it again on any device. The demo is a simulated bedroom walk with everyday sensor errors: both sides of the bed (turning round on the spot at one, on a curve at the other), then back out the door.</p>
+    <p class="hint">Export saves a picture and a .json of the walk; on the Live tab the file holds the map too. Open a .json here to look at it again on any device. A walk you open becomes your map. The demo is a simulated bedroom walk with everyday sensor errors: both sides of the bed (turning round on the spot at one, on a curve at the other), then back out the door. On the Live tab it also has a second, shorter walk tracked on that map.</p>
   </div>
 
   <div class="field tips">
@@ -240,6 +248,7 @@ label.file input{position:absolute;inset:0;opacity:0}
       <li>Start at a spot you can find again, like the door, facing along a wall.</li>
       <li>Walk at a normal, steady pace. Shuffling and very slow steps get missed.</li>
       <li>When you're back at the start, tap I'm at start. The Corrected view closes the loop there.</li>
+      <li>Live: start at S, facing the way you started the map. If your dot drifts off, go back to S and tap I'm at start.</li>
       <li>Keep the screen on. iPhone stops sending motion data when it locks or you switch apps.</li>
     </ul>
   </div>
@@ -272,7 +281,9 @@ function relHeadings(w, source){
 // Firmer steps are longer strides, softer ones shorter (length grows with the 4th root of the bounce).
 function stepLengths(w, cfg){
   const amps = w.steps.map(s => s.a).filter(a => a > 0);
-  const med = cfg.adaptive && amps.length >= 5 ? median(amps) : 0;
+  // what counts as a firm step: this walk's typical bounce, or a given one (walking on a saved map: the map walk's, so
+  // your steps measure the way its steps did, and each new step doesn't change the length of all the others)
+  const med = !cfg.adaptive ? 0 : cfg.ampRef > 0 ? cfg.ampRef : amps.length >= 5 ? median(amps) : 0;
   return w.steps.map(s => cfg.stride * (med && s.a > 0 ? Math.min(1.2, Math.max(0.8, Math.pow(s.a / med, 0.25))) : 1));
 }
 
@@ -344,16 +355,14 @@ function findUturns(hs, w, lens){
   return { pivot, startAt };
 }
 
-/* Square up walking that runs nearly along the room's walls, and learn the gyro's drift from it.
-   Walking more than 20° off the walls (diagonals) keeps its own, drift-corrected heading. */
-function correctHeadings(hs, pivot, cfg, st){
-  const n = hs.length;
-  if (!cfg.snap || n < 3) return { H: hs.slice(), axis: 0 };
-  const idx = [];                                // early straight-walking steps
+/* Which way the walls run (an axis, modulo a quarter turn) and how fast the gyro drifts, from the early
+   straight steps: try every wall direction and drift rate, keep the pair that lines up the most of them.
+   The first straight steps count double (you start facing along a wall); zero drift is slightly preferred.
+   null with fewer than three straight steps. */
+function wallAxis(hs, pivot, st){
+  const n = hs.length, idx = [];                 // early straight-walking steps
   for (let i = 1; i < n && idx.length < 40; i++) if (!pivot.has(i) && Math.abs(wrap(hs[i] - hs[i - 1])) < 20 * DEG) idx.push(i);
-  if (idx.length < 3) return { H: hs.slice(), axis: 0 };
-  // Try every wall direction and drift rate; keep the pair that lines up the most early steps.
-  // The first straight steps count double (you start facing along a wall); zero drift is slightly preferred.
+  if (idx.length < 3) return null;
   const t0 = st[0].t;
   let best = -1, axis = 0, rate = 0;
   for (let rr = -30; rr <= 30; rr++){
@@ -368,6 +377,19 @@ function correctHeadings(hs, pivot, cfg, st){
       if (score > best){ best = score; axis = a; rate = r; }
     }
   }
+  return { axis, rate };
+}
+
+/* Square up walking that runs nearly along the room's walls, and learn the gyro's drift from it.
+   Walking more than 20° off the walls (diagonals) keeps its own, drift-corrected heading. `fixed` gives the
+   walls' direction and starting drift rate instead of estimating them (walking on a saved map). */
+function correctHeadings(hs, pivot, cfg, st, fixed){
+  const n = hs.length;
+  if (!cfg.snap || n < 3) return { H: hs.slice(), axis: fixed ? fixed.axis : 0 };
+  const est = fixed || wallAxis(hs, pivot, st);
+  if (!est) return { H: hs.slice(), axis: 0 };
+  const axis = est.axis, t0 = st[0].t;
+  let rate = est.rate || 0;
   const out = new Array(n);
   let drift = 0, lastT = t0;
   for (let i = 0; i < n; i++){
@@ -395,6 +417,10 @@ function correctHeadings(hs, pivot, cfg, st){
 }
 
 /* ---- following an earlier stretch of the path ---- */
+// Set by buildCorrected while it matches a walk onto a saved map: points 0..MAPEND are the map (fixed, and
+// always eligible to match, whichever way they run), and segments listed in GAP join pieces you never walked.
+let MAPEND = 0, GAP = null;
+const gap = s => GAP !== null && GAP.has(s);
 function travelDir(pts, s, dir){
   const a = pts[s - 1], b = pts[s], x = b[0] - a[0], y = b[1] - a[1];
   return Math.hypot(x, y) < 1e-6 ? null : Math.atan2(dir * x, dir * y);
@@ -406,15 +432,16 @@ function travelDir(pts, s, dir){
    (`axis`) only. */
 function crossingAt(pts, J, i, h, seen, room, ext, axis){
   const ux = Math.sin(h), uy = Math.cos(h), COS = Math.cos(35 * DEG);
-  let best = null, bd = 0.4;
+  const lim = MAPEND ? 0.55 : 0.4;                  // a saved map's corners are often cut short: its next leg can start a little further off
+  let best = null, bd = lim;
   for (let s = 1; s <= i - 2; s++){
-    if (seen.has(s)) continue;
+    if (seen.has(s) || gap(s)) continue;
     const a = pts[s - 1], b = pts[s];
     if (Math.min(a[0], b[0]) - 0.5 > J[0] || Math.max(a[0], b[0]) + 0.5 < J[0] || Math.min(a[1], b[1]) - 0.5 > J[1] || Math.max(a[1], b[1]) + 0.5 < J[1]) continue;
     const vx = b[0] - a[0], vy = b[1] - a[1], sl = Math.hypot(vx, vy);
     if (sl < 0.2) continue;
     const ca = (vx * ux + vy * uy) / sl;
-    if (Math.abs(ca) < COS || (ca > 0 && s > i - 7)) continue;
+    if (Math.abs(ca) < COS || (ca > 0 && s > i - 7 && s > MAPEND)) continue;
     let t = ((J[0] - a[0]) * vx + (J[1] - a[1]) * vy) / (sl * sl);
     const dir = ca > 0 ? 1 : -1;
     let tq;
@@ -432,7 +459,8 @@ function crossingAt(pts, J, i, h, seen, room, ext, axis){
       if (room && roomAhead(pts, s, tq, dir, ux, uy, COS, i, room) < room) continue;
     }
     const qx = a[0] + vx * tq, qy = a[1] + vy * tq, d = Math.hypot(J[0] - qx, J[1] - qy);
-    if (d < bd){ bd = d; best = { s, t: Math.max(0, Math.min(1, tq)), dir, q: [qx, qy] }; }
+    const dd = d + (MAPEND && s > MAPEND ? 0.15 : 0);       // on a saved map, its paths win a tie with your own
+    if (d < lim && dd < bd){ bd = dd; best = { s, t: Math.max(0, Math.min(1, tq)), dir, q: [qx, qy] }; }
   }
   return best;
 }
@@ -442,7 +470,7 @@ function straightRun(pts, s, i){
   const len = k => Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]);
   const h0 = dirOf(s); let r = len(s);
   for (const step of [-1, 1]){
-    for (let k = s + step; r < 2 && k >= 1 && k <= i - 2; k += step){
+    for (let k = s + step; r < 2 && k >= 1 && k <= i - 2 && !gap(k); k += step){
       const l = len(k);
       if (l < 0.05) continue;
       if (Math.abs(wrap(dirOf(k) - h0)) > 20 * DEG) break;
@@ -454,7 +482,7 @@ function straightRun(pts, s, i){
 // How far the old path goes on your way from (s, t), up to `need`
 function roomAhead(pts, s, t, dir, ux, uy, COS, i, need){
   let sl = Math.hypot(pts[s][0] - pts[s - 1][0], pts[s][1] - pts[s - 1][1]), r = (dir > 0 ? 1 - t : t) * sl;
-  for (let k = s + dir; r < need && k >= 1 && k <= i - 2; k += dir){
+  for (let k = s + dir; r < need && k >= 1 && k <= i - 2 && !gap(k); k += dir){
     const vx = pts[k][0] - pts[k - 1][0], vy = pts[k][1] - pts[k - 1][1];
     sl = Math.hypot(vx, vy);
     if (sl < 0.05) continue;                          // turned on the spot here: no distance, look on
@@ -498,7 +526,7 @@ function findJunction(pts, P, fol, h, i, ahead, behind){
     const room = sgn > 0 ? 0.5 : 0;                 // moved on to a path, it should lead somewhere your way
     if (maxD <= 0) return null;
     const dir = fol.dir * sgn, corners = [], seen = new Set();
-    const ok = s => s >= 1 && s <= i - 2;
+    const ok = s => s >= 1 && s <= i - 2 && !gap(s);
     let s = fol.s, cur = P.slice(), d = 0;
     // a step can sit just past the end of the segment it was matched to: start from the one you're beside
     for (let g = 0; g < 3 && ok(s); g++){
@@ -534,30 +562,42 @@ function findJunction(pts, P, fol, h, i, ahead, behind){
    round that corner. null when you're off the old path. */
 function snapStep(pts, p, prev, h, len, i, fol){
   const ux = Math.sin(h), uy = Math.cos(h), COS = Math.cos(35 * DEG);
-  let best = null, bd = Infinity;
+  let best = null, bd = Infinity, inMap = null, dIn = Infinity;
   for (let s = 1; s <= i - 2; s++){
+    if (gap(s)) continue;
     const a = pts[s - 1], b = pts[s];
     if (Math.min(a[0], b[0]) - 2.3 > p[0] || Math.max(a[0], b[0]) + 2.3 < p[0] || Math.min(a[1], b[1]) - 2.3 > p[1] || Math.max(a[1], b[1]) + 2.3 < p[1]) continue;
     const vx = b[0] - a[0], vy = b[1] - a[1], sl = Math.hypot(vx, vy);
     if (sl < 0.2) continue;
     const ca = (vx * ux + vy * uy) / sl;
     if (Math.abs(ca) < COS) continue;
-    if (ca > 0 && s > i - 7) continue;
+    if (ca > 0 && s > i - 7 && s > MAPEND) continue;
     const t = ((p[0] - a[0]) * vx + (p[1] - a[1]) * vy) / (sl * sl);
     if (t < -0.8 / sl || t > 1 + 0.8 / sl) continue;          // alongside it, or within 0.8 m of its ends
     const qx = a[0] + vx * t, qy = a[1] + vy * t, d = Math.hypot(p[0] - qx, p[1] - qy);
     const near = Math.abs(s - fol.s) <= 4;
     if (d > (near ? 1.4 : 0.8)) continue;
     if ((t < 0 || t > 1) && d > 0.3) continue;                 // past its end you can carry on along it, not jump onto its line
-    const score = d - (Math.abs(s - fol.s) <= 1 ? 0.15 : 0);   // stay on the same stretch when it's a tie
-    if (score < bd){ bd = score; best = { s, t: Math.max(0, Math.min(1, t)), q: [qx, qy], dir: ca > 0 ? 1 : -1 }; }
+    const score = d - (Math.abs(s - fol.s) <= 1 ? 0.15 : 0) + (MAPEND && s > MAPEND ? 0.15 : 0);   // stay on the same stretch (and on a saved map) when it's a tie
+    if (score < bd){ bd = score; best = { s, t: Math.max(0, Math.min(1, t)), q: [qx, qy], dir: ca > 0 ? 1 : -1, past: Math.max(0, ca > 0 ? (t - 1) * sl : -t * sl) }; }
+    if (MAPEND && s <= MAPEND && t >= 0 && t <= 1 && d < 0.5 && d < dIn){ dIn = d; inMap = { s, t, q: [qx, qy], dir: ca > 0 ? 1 : -1, past: 0 }; }
+  }
+  // On a saved map, carrying straight on past the end of a stretch: if the map goes on your way beside you (another
+  // part of it), you're on that; else if it bends, go round the bend with it; and where it goes nowhere your way,
+  // you're at its end: your step count runs over (the way you turn next shows where), for up to 2 m, past which
+  // you've walked on somewhere the map hasn't been
+  if (best && MAPEND && best.past > 0.15 && inMap) best = inMap;
+  if (best && MAPEND && best.past > 0.15){ const bn = bendOnto(pts, p, best.s, best.dir, h, i, best.past); if (bn) best = bn; }
+  if (best && MAPEND && best.s <= MAPEND && best.past > 0.05 && !best.corners && (fol.over || 0) + best.past <= 2.0){
+    const e = best.dir > 0 ? pts[best.s] : pts[best.s - 1];
+    best = { s: best.s, t: best.dir > 0 ? 1 : 0, q: e.slice(), dir: best.dir, over: (fol.over || 0) + best.past };
   }
   if (best || fol.lost) return best;
   const dir = fol.dir;
   let s = fol.s, d = 0;
   for (let g = 0; g < 40 && d <= 1.6; g++){
     s += dir;
-    if (s < 1 || s > i - 2) break;
+    if (s < 1 || s > i - 2 || gap(s)) break;
     const td = travelDir(pts, s, dir);
     if (td == null) continue;
     const a = pts[s - 1], b = pts[s], sl = Math.hypot(b[0] - a[0], b[1] - a[1]);
@@ -567,6 +607,26 @@ function snapStep(pts, p, prev, h, len, i, fol){
       return { s, t: dir > 0 ? f : 1 - f, q: [c[0] + Math.sin(td) * Math.min(len, sl), c[1] + Math.cos(td) * Math.min(len, sl)], dir };
     }
     d += sl;
+  }
+  return null;
+}
+
+/* You're at p, `past` metres beyond the end of stretch s (going `dir` along it). If one of the next few stretches
+   after it runs your way and you're beside it, closer than that, you went round the bend there: the spot beside you
+   on it, and the map's corners on the way there. Stretches of no length (turning on the spot) don't count
+   towards the few. */
+function bendOnto(pts, p, s, dir, h, i, past){
+  const end = k => dir > 0 ? pts[k] : pts[k - 1], corners = [end(s).slice()];
+  for (let k = s + dir, g = 0; g < 4 && k >= 1 && k <= i - 2 && !gap(k); k += dir){
+    const a = pts[k - 1], b = pts[k], vx = b[0] - a[0], vy = b[1] - a[1], sl = Math.hypot(vx, vy);
+    if (sl < 0.05) continue;
+    g++;
+    const t = ((p[0] - a[0]) * vx + (p[1] - a[1]) * vy) / (sl * sl);
+    if (Math.abs(wrap(h - Math.atan2(dir * vx, dir * vy))) < 35 * DEG && t >= 0 && t <= 1){
+      const qx = a[0] + vx * t, qy = a[1] + vy * t;
+      if (Math.hypot(p[0] - qx, p[1] - qy) < past) return { s: k, t, q: [qx, qy], dir, corners };
+    }
+    corners.push(end(k).slice());
   }
   return null;
 }
@@ -583,13 +643,14 @@ function findMatch(pts, cum, fx, fy, i, p, h, cumNow, fxNow, fyNow, axis, streng
   const along = Math.abs(Math.cos(h - axis)), across = Math.abs(Math.sin(h - axis));
   let best = null, bestScore = 1;
   for (let j = 1; j <= i - 3; j++){
+    if (gap(j)) continue;
     const a = pts[j - 1], b = pts[j];
     if (Math.min(a[0], b[0]) - 2.7 > p[0] || Math.max(a[0], b[0]) + 2.7 < p[0] || Math.min(a[1], b[1]) - 2.7 > p[1] || Math.max(a[1], b[1]) + 2.7 < p[1]) continue;
     const vx = b[0] - a[0], vy = b[1] - a[1], sl = Math.hypot(vx, vy);
     if (sl < 0.2) continue;
     const ca = (vx * ux + vy * uy) / sl;
     if (Math.abs(ca) < COS) continue;
-    if (ca > 0 && (j > i - 7 || cumNow - cum[j] < 5)) continue;
+    if (ca > 0 && j > MAPEND && (j > i - 7 || cumNow - cum[j] < 5)) continue;
     let t = ((p[0] - a[0]) * vx + (p[1] - a[1]) * vy) / (sl * sl);
     if (t < -0.4 / sl || t > 1 + 0.4 / sl) continue;               // alongside it, or within 0.4 m of its ends
     t = Math.max(0, Math.min(1, t));
@@ -634,31 +695,48 @@ function spread(pts, H, L, from, i, p, q){
   }
 }
 
+/* With cfg.base ({ pts }), your walk is matched onto that saved map instead of only onto itself: the map's
+   points come first and stay as they are, you start at its start, and only your own points are returned. */
 function buildCorrected(hs, w, lens, cfg){
-  const n = hs.length, events = { uturns: 0, joins: 0 }, pts = [[0, 0]];
-  if (!n) return { pts, events };
-  const { pivot, startAt } = findUturns(hs, w, lens);
-  const { H, axis } = correctHeadings(hs, pivot, cfg, w.steps);
-  const L = lens.map((l, i) => pivot.has(i) ? 0 : l);
+  const base = cfg.base && cfg.base.pts && cfg.base.pts.length ? cfg.base : null;
+  const pts = base ? base.pts.map(p => [p[0], p[1]]) : [[0, 0]];
+  let B = pts.length - 1;
+  const gaps = new Set();
+  if (base && Math.hypot(pts[B][0], pts[B][1]) > 0.05){ pts.push([0, 0]); B++; gaps.add(B); }   // back to its start, not walked
+  MAPEND = base ? B : 0; GAP = gaps.size ? gaps : null;
+  try { return matchWalk(hs, w, lens, cfg, pts, B); }
+  finally { MAPEND = 0; GAP = null; }
+}
+function matchWalk(hs, w, lens, cfg, pts, B){
+  const n = hs.length, events = { uturns: 0, joins: 0 };
+  if (!n) return { pts: [pts[B]], drawn: [pts[B]], events, axis: cfg.fixedAxis ? cfg.fixedAxis.axis : 0, onMap: [] };
+  const { pivot, startAt: startOwn } = findUturns(hs, w, lens);
+  const { H: Hown, axis } = correctHeadings(hs, pivot, cfg, w.steps, cfg.fixedAxis);
+  // headings and lengths by point: the map's own segments first (if any), then your steps
+  const H = [], L = [];
+  for (let k = 1; k <= B; k++){ const a = pts[k - 1], b = pts[k]; H.push(Math.atan2(b[0] - a[0], b[1] - a[1])); L.push(Math.hypot(b[0] - a[0], b[1] - a[1])); }
+  hs.forEach((h, k) => { H.push(Hown[k]); L.push(pivot.has(k) ? 0 : lens[k]); });
+  const startAt = new Map([...startOwn].map(([m, k]) => [m + B, k + B]));
   /* Turning round on a curve really moves you sideways (a 3-step curve, about 0.9 m). The map draws you
      coming back on the same line, so it keeps a note of that sideways shift and takes it back off when
      you later walk the other way across it; otherwise you'd overshoot the next corner by that much.
      Turning on the spot (one shuffle or none) moves you nowhere, so it leaves no note. */
   const owed = new Map();
-  for (const [m, k] of startAt){
+  for (const [m, k] of startOwn){
     if (m - k - 1 < 2) continue;
     let dx = 0, dy = 0;
-    for (let q = k + 1; q < m; q++){ dx += Math.sin(H[q]) * lens[q] * 0.8; dy += Math.cos(H[q]) * lens[q] * 0.8; }
-    owed.set(m, [dx, dy]);
+    for (let q = k + 1; q < m; q++){ dx += Math.sin(Hown[q]) * lens[q] * 0.8; dy += Math.cos(Hown[q]) * lens[q] * 0.8; }
+    owed.set(m + B, [dx, dy]);
   }
   let debt = [0, 0];
-  const cum = [0], fx = [0], fy = [0];   // distance walked; free travel across/along the walls
-  const marks = new Set((w.anchors || []).map(a => a.i));
+  // distance walked; free travel across/along the walls (on a saved map, both start from nothing where you start)
+  const cum = new Array(B + 1).fill(0), fx = new Array(B + 1).fill(0), fy = new Array(B + 1).fill(0);
+  const marks = new Set((w.anchors || []).map(a => a.i + B));
   const strength = JOIN[cfg.join] != null ? JOIN[cfg.join] : 1;
-  let anchor = 0, lastMark = 0, fol = null, cand = null;
-  const via = [];                                  // extra corners to draw before a point (turns at junctions)
+  let anchor = B, lastMark = B, fol = null, cand = null;
+  const via = [], onMap = [];                      // extra corners to draw before a point; on the saved map?
   const lerp = (arr, s, f) => arr[s - 1] + (arr[s] - arr[s - 1]) * f;
-  for (let i = 1; i <= n; i++){
+  for (let i = B + 1; i <= B + n; i++){
     const h = H[i - 1], len = L[i - 1], prev = pts[i - 1];
     if (owed.has(i - 1)){ const o = owed.get(i - 1); debt = [debt[0] + o[0], debt[1] + o[1]]; }
     let vx = Math.sin(h) * len, vy = Math.cos(h) * len;
@@ -671,7 +749,7 @@ function buildCorrected(hs, w, lens, cfg){
       debt = [du * ca + dw * sa, -du * sa + dw * ca];
     }
     let p = [prev[0] + vx, prev[1] + vy];
-    let fixed = false, inherit = null, jdbg = null;
+    let fixed = false, inherit = null, jdbg = null, wait = false;
     if (startAt.has(i - 1)){                      // turned around: walk back over the way you came
       const k = startAt.get(i - 1);
       fol = { s: k + 1, dir: -1, run: 0, from: i - 1 };   // run: how far you've come back along old paths, since point `from`
@@ -685,10 +763,17 @@ function buildCorrected(hs, w, lens, cfg){
         let jn = null;
         if (td != null && Math.abs(wrap(h - td)) > 45 * DEG){
           const at = fol.lost ? pts[i - 1 - fol.lost] : prev;
-          jn = findJunction(pts, at, fol, h, i, fol.lost ? 0 : 1.5, 1.0 - (fol.away || 0));
+          // On a saved map there's nowhere else to be: look further along it for where you turned, even a step
+          // or two into the turn (your count can be short by a few steps over a long stretch)
+          const ahead = MAPEND ? 2.5 : fol.lost ? 0 : 1.5, back = MAPEND ? Math.max(0.5, 2.0 - (fol.away || 0)) : 1.0 - (fol.away || 0);
+          jn = findJunction(pts, at, fol, h, i, ahead, back);
           // (not when you've come right round: heading back the way you came is walking round something, and the
           // path you'd find there is the very one you were coming back along)
-          if (!jn && (fol.run || 0) >= 2.0 && Math.abs(wrap(h - td)) <= 135 * DEG) jn = junctionBehind(pts, i, h, fol.from != null ? fol.from : i - 1, 2.0, td, cfg.snap ? axis : null);
+          if (!jn && (MAPEND || (fol.run || 0) >= 2.0) && Math.abs(wrap(h - td)) <= 135 * DEG) jn = junctionBehind(pts, i, h, fol.from != null ? fol.from : i - 1, 2.0, td, cfg.snap ? axis : null);
+          // On a saved map, your latest step turning away with no junction for it, or turning most of the way round
+          // (100° or more: nobody turns into a side path that sharply, but it's a step you take while turning round),
+          // leaves you where you were until the next step shows which way you went; it's placed properly then
+          if (MAPEND && i === B + n && (!jn || Math.abs(wrap(h - td)) >= 100 * DEG)){ jn = null; wait = true; }
         }
         if (jn){
           if (cfg.debug) jdbg = { d: +jn.dist.toFixed(2), behind: !!jn.behind, lost: fol.lost || 0, away: +(fol.away || 0).toFixed(2) };
@@ -696,31 +781,47 @@ function buildCorrected(hs, w, lens, cfg){
           const ex = (b[0] - a[0]) / sl * jn.dir, ey = (b[1] - a[1]) / sl * jn.dir;
           let lead = 0;                             // how far along the new way you already were
           const hNew = Math.atan2(ex, ey);
-          if (jn.behind){
-            // You'd gone past it. Steps that carried you on past it the old way come back to it; steps you'd
-            // already taken the new way (turning a step early) stay where they are, moved onto its line.
+          if (!jn.behind && fol.lost){              // the steps you took turning were still on the way to it
+            for (let q = i - fol.lost; q < i; q++) pts[q] = jn.J.slice();
+            if (jn.corners.length) via[i - fol.lost] = jn.corners.slice();
+            jn.corners = [];
+          }
+          // If you'd gone past it (or, on a saved map, past the end of the stretch you were on), steps that
+          // carried you on past it the old way come back to it; steps you'd already taken the new way (turning a
+          // step early) stay where they are, moved onto its line.
+          let past = !!jn.behind;
+          if (jn.behind || MAPEND){                 // (on a saved map, also when it was found ahead of you)
             const tx = Math.sin(td), ty = Math.cos(td), lim = jn.dist + (fol.away || 0) + 1.0;
             for (let q = i - 1; q > Math.max(lastMark, i - 5); q--){
               const ox = pts[q][0] - jn.q[0], oy = pts[q][1] - jn.q[1], on = ox * ex + oy * ey;
               if (Math.hypot(ox, oy) > lim) break;
-              if (on > 0.2 && Math.abs(wrap(H[q - 1] - hNew)) <= 30 * DEG){ pts[q] = [jn.q[0] + ex * on, jn.q[1] + ey * on]; if (q === i - 1) lead = on; }
-              else if (ox * tx + oy * ty > -0.05) pts[q] = jn.q.slice();
+              if (on > 0.2 && Math.abs(wrap(H[q - 1] - hNew)) <= 30 * DEG){ pts[q] = [jn.q[0] + ex * on, jn.q[1] + ey * on]; if (q === i - 1) lead = on; past = true; }
+              else if (ox * tx + oy * ty > -0.05){ pts[q] = jn.q.slice(); past = true; }
               else break;
             }
           }
           p = [jn.q[0] + ex * (lead + len), jn.q[1] + ey * (lead + len)];
+          let js = jn.s, jt = jn.t, bend = [];
+          if (MAPEND){                              // on a saved map: past the end of that stretch, round its bend
+            const tp = ((p[0] - a[0]) * (b[0] - a[0]) + (p[1] - a[1]) * (b[1] - a[1])) / (sl * sl), over = (jn.dir > 0 ? tp - 1 : -tp) * sl;
+            const bn = over > 0.15 ? bendOnto(pts, p, jn.s, jn.dir, h, i, over) : null;
+            if (bn){ p = bn.q; js = bn.s; jt = bn.t; bend = bn.corners; }
+          }
           // draw the turn through the junction along the old path, not as a shortcut beside it
-          if (!jn.behind) via[i] = [...jn.corners, jn.J, jn.q];
-          else if (!lead) via[i] = [jn.q];
-          fol = { s: jn.s, dir: jn.dir, lost: 0, away: 0, run: len, from: i }; fixed = true;
-          inherit = [lerp(fx, jn.s, jn.t), lerp(fy, jn.s, jn.t)];
+          if (!past) via[i] = [...jn.corners, jn.J, jn.q, ...bend];
+          else if (!lead) via[i] = [jn.q, ...bend];
+          else if (bend.length) via[i] = bend;
+          fol = { s: js, dir: jn.dir, lost: 0, away: 0, run: len, from: i }; fixed = true;
+          inherit = [lerp(fx, js, jt), lerp(fy, js, jt)];
         }
-        const sn = jn ? null : snapStep(pts, p, prev, h, len, i, fol);
+        const sn = jn || wait ? null : snapStep(pts, p, prev, h, len, i, fol);
         if (jn){ /* placed at the junction above */ }
+        else if (wait){ p = prev.slice(); fixed = true; inherit = [fx[i - 1], fy[i - 1]]; }
         else if (sn){
           if (fol.lost) spread(pts, H, L, i - 1 - fol.lost, i, p, sn.q);   // back on it after a step or two off
+          if (sn.corners) via[i] = sn.corners;      // gone round a bend in the map
           const on = td == null || Math.abs(wrap(h - td)) <= 45 * DEG;   // still going the same way along it
-          p = sn.q; fol = { s: sn.s, dir: sn.dir, lost: 0, away: 0, run: (on ? fol.run || 0 : 0) + len, from: on && fol.from != null ? fol.from : i - 1 }; fixed = true;
+          p = sn.q; fol = { s: sn.s, dir: sn.dir, lost: 0, away: 0, run: (on ? fol.run || 0 : 0) + len, from: on && fol.from != null ? fol.from : i - 1, over: sn.over || 0 }; fixed = true;
           // the old stretch fixes how far to the side you are, not how far along it: that is still counted
           // from your steps, so the along-the-stretch uncertainty keeps growing
           const sx = Math.abs(Math.sin(h - axis)) >= Math.SQRT1_2;
@@ -758,6 +859,7 @@ function buildCorrected(hs, w, lens, cfg){
     }
     if (cfg.debug) cfg.debug.push({ i, h: Math.round(h / DEG), len: +len.toFixed(2), mode: fol ? 'on:' + fol.s + (fol.dir > 0 ? '+' : '-') + (fol.lost ? 'L' + fol.lost : '') + ' r' + (fol.run || 0).toFixed(1) + ' f' + fol.from : 'free', cand: cand ? cand.n : 0, p: p.map(v => +v.toFixed(2)), jn: jdbg });
     pts.push(p);
+    onMap.push(!!(fol && fol.s <= MAPEND && !fol.lost));
     cum.push(cum[i - 1] + len);
     if (inherit){ fx.push(inherit[0]); fy.push(inherit[1]); }
     else {
@@ -766,15 +868,44 @@ function buildCorrected(hs, w, lens, cfg){
     }
     if (fixed) anchor = i;
   }
-  const drawn = [pts[0]];
-  for (let i = 1; i < pts.length; i++){ if (via[i]) drawn.push(...via[i]); drawn.push(pts[i]); }
-  return { pts, drawn, events };
+  const drawn = [pts[B]];
+  for (let i = B + 1; i < pts.length; i++){ if (via[i]) drawn.push(...via[i]); drawn.push(pts[i]); }
+  return { pts: B ? pts.slice(B) : pts, drawn, events, axis, onMap };
 }
 
 function computePaths(w, cfg){
   const hs = relHeadings(w, cfg.source), lens = stepLengths(w, cfg);
   const c = buildCorrected(hs, w, lens, cfg);
-  return { hs, lens, raw: buildPath(hs, lens), straight: c.pts, drawn: c.drawn || c.pts, events: c.events };
+  const amps = w.steps.map(s => s.a).filter(a => a > 0);
+  return { hs, lens, raw: buildPath(hs, lens), straight: c.pts, drawn: c.drawn || c.pts, events: c.events, axis: c.axis, amp: amps.length >= 5 ? median(amps) : 0 };
+}
+
+/* Live: where you are on a saved map. You start where the map walk started, facing about the same way (when
+   both walks have a compass reading, it settles which quarter-turn); then your own first straight steps line
+   your walk up with the map's walls exactly. Each step is matched onto the map's paths the way a walk is
+   matched onto itself, so turns land on the map's junctions and miscounted steps don't carry you off it.
+   map = { pts: the map's path as drawn, axis: its walls' direction, refC: its starting compass reading, amp: its
+   walk's typical step bounce }. */
+function trackOnMap(map, w, cfg){
+  if (map.amp > 0) cfg = Object.assign({}, cfg, { ampRef: map.amp });   // a firm step is as firm as on the map walk
+  const hs0 = relHeadings(w, cfg.source), lens = stepLengths(w, cfg);
+  let q = 0;
+  if (w.refC != null && map.refC != null) q = Math.round(wrap(w.refC - map.refC) / Q) * Q;
+  const est = hs0.length >= 3 ? wallAxis(hs0, findUturns(hs0, w, lens).pivot, w.steps) : null;
+  const rot = est ? wrap(q + wrap(4 * (map.axis - est.axis - q)) / 4) : q;
+  const hs = hs0.map(h => wrap(h + rot));
+  const c = buildCorrected(hs, w, lens, Object.assign({}, cfg, { base: { pts: map.pts }, fixedAxis: { axis: map.axis, rate: est ? est.rate : 0 } }));
+  const onMap = c.pts.slice(1).map(p => distToPath(map.pts, p) <= 0.3);
+  return { hs, lens, raw: buildPath(hs, lens), straight: c.pts, drawn: c.drawn, events: c.events, rot, onMap };
+}
+function distToPath(pts, p){
+  let best = Infinity;
+  for (let k = 1; k < pts.length; k++){
+    const a = pts[k - 1], b = pts[k], vx = b[0] - a[0], vy = b[1] - a[1], l2 = vx * vx + vy * vy;
+    const t = l2 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * vx + (p[1] - a[1]) * vy) / l2)) : 0;
+    best = Math.min(best, Math.hypot(p[0] - a[0] - vx * t, p[1] - a[1] - vy * t));
+  }
+  return best;
 }
 
 /* ---- demo walk: a bedroom with the bed against the far wall ---- */
@@ -859,13 +990,22 @@ const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).
 const COL = { ink: css('--ink'), line: css('--line'), raw: css('--raw'), straight: css('--straight'), rec: css('--rec'), muted: css('--muted'), text: css('--text') };
 
 /* ---------- state ---------- */
-const S = {
-  permitted:false, sensorsSeen:false, recording:false,
+// A walk: what one tab records. The Map tab's walk is your map; the Live tab's is you walking on it.
+const blankWalk = () => ({
   steps:[],            // {t: ms since walk start, g: gyro heading (rad, clockwise), c: compass heading or null, a: step bounce}
-  trace:[],            // [t, gyro heading] about 10 times a second while recording
+  trace:[],            // [t, gyro heading, strongest bounce, strongest upward bounce] about 10 times a second while recording
   anchors:[],          // {i: step count} when you tapped I'm at start
   refG:null, refC:null,
-  walkStart:0, elapsed:0, segStart:0, lastTraceT:-1e9,
+  walkStart:0, elapsed:0, lastTraceT:-1e9,
+  seen:{ uturns:0, joins:0 }
+});
+const WALK = Object.keys(blankWalk());
+const S = {
+  permitted:false, sensorsSeen:false, recording:false,
+  mode: store.get('mode', 'map') === 'live' ? 'live' : 'map',
+  ...blankWalk(),      // the open tab's walk
+  other: blankWalk(),  // the other tab's walk
+  segStart:0,
   stride: store.get('stride', 0.70),
   thr: store.get('thr', 1.2),
   source: store.get('source', 'gyro'),
@@ -877,10 +1017,15 @@ const S = {
   accG:{s:0,c:0,n:0}, accC:{s:0,c:0,n:0},
   gEst:9.81, sig:0, sMax:-Infinity, sMin:Infinity, bMax:0, uMax:0, inPeak:false, peakT:0, peakV:0, lastStepT:0,
   spark:[], stepFlash:0,
-  seen:{ uturns:0, joins:0 },
-  cache:{ hs:[], lens:[], raw:[[0,0]], straight:[[0,0]], events:{ uturns:0, joins:0 } }
+  cache:{ hs:[], lens:[], raw:[[0,0]], straight:[[0,0]], events:{ uturns:0, joins:0 } },
+  mapCache:null,       // the map as drawn, from the Map tab's walk
+  offMap:false         // Live: your last steps aren't on the map
 };
 if (!(S.join in JOIN)) S.join = 'normal';
+const takeWalk = () => { const o = {}; for (const k of WALK) o[k] = S[k]; return o; };
+const putWalk = o => { for (const k of WALK) S[k] = o[k]; };
+const mapW = () => S.mode === 'map' ? S : S.other;
+const hasMap = () => mapW().steps.length >= 5;
 
 /* ---------- sensors ---------- */
 async function ensureSensors(){
@@ -976,7 +1121,23 @@ function registerStep(t){
 }
 
 /* ---------- paths ---------- */
+// The map, as the Map tab draws it. Worked out again only when that walk or a setting changes.
+function mapPaths(){
+  const w = mapW(), n = w.steps.length;
+  const key = [n, w.anchors.length, n ? w.steps[n - 1].t : 0, n ? w.steps[0].g : 0, S.stride, S.adaptive, S.snap, S.join, S.source].join();
+  if (!S.mapCache || S.mapCache.key !== key) S.mapCache = { key, ...computePaths(w, S) };
+  return S.mapCache;
+}
+// On the Live tab joining never goes fully off: it's how your walk finds the map
+const liveCfg = () => ({ stride:S.stride, adaptive:S.adaptive, snap:S.snap, source:S.source, join: S.join === 'off' ? 'normal' : S.join });
 function recompute(){
+  if (S.mode === 'live'){
+    const m = mapPaths();
+    S.cache = hasMap() ? trackOnMap({ pts: m.drawn, axis: m.axis, refC: mapW().refC, amp: m.amp }, S, liveCfg()) : computePaths(S, liveCfg());
+    const om = S.cache.onMap || [], k = om.length;
+    S.offMap = k >= 2 && !om[k - 1] && !om[k - 2];   // two steps in a row more than 30 cm from anywhere on the map
+    return;
+  }
   S.cache = computePaths(S, S);
   const ev = S.cache.events;
   if (S.recording){
@@ -985,15 +1146,16 @@ function recompute(){
   }
   S.seen = { uturns: Math.max(S.seen.uturns, ev.uturns), joins: Math.max(S.seen.joins, ev.joins) };
 }
+// Which way you're facing now, in the trace's frame (on the Live tab, turned to line up with the map)
 function liveRel(){
-  const st = S.steps;
+  const st = S.steps, rot = S.mode === 'live' ? S.cache.rot || 0 : 0;
   if (S.source === 'compass' && S.liveC != null){
     const rc = S.refC != null ? S.refC : (st.find(s => s.c != null) || {}).c;
-    if (rc != null) return wrap(S.liveC - rc);
+    if (rc != null) return wrap(S.liveC - rc + rot);
   }
   if (S.liveG != null){
     const rg = S.refG != null ? S.refG : (st[0] ? st[0].g : null);
-    if (rg != null) return wrap(S.liveG - rg);
+    if (rg != null) return wrap(S.liveG - rg + rot);
   }
   const hs = S.cache.hs; return hs.length ? hs[hs.length - 1] : 0;
 }
@@ -1001,7 +1163,7 @@ function liveRel(){
 /* ---------- drawing ---------- */
 const cv = $('map'), ctx = cv.getContext('2d');
 const sp = $('spark'), sctx = sp.getContext('2d');
-let dpr = 1, V = null;
+let dpr = 1, V = null, D = null;   // V: the view (eases to fit), D: where the dot is drawn (glides to your latest spot)
 
 function sizeCanvas(c){
   const r = c.getBoundingClientRect();
@@ -1024,9 +1186,9 @@ function draw(){
   ctx.setTransform(dpr,0,0,dpr,0,0);
   ctx.fillStyle = COL.ink; ctx.fillRect(0,0,W,H);
 
-  const paths = shownPaths();
+  const live = S.mode === 'live', paths = shownPaths(), mapP = live && hasMap() ? mapPaths().drawn : null;
   let x0 = 0, x1 = 0, y0 = 0, y1 = 0;
-  for (const p of paths) for (const [x,y] of p.pts){ if (x<x0)x0=x; if (x>x1)x1=x; if (y<y0)y0=y; if (y>y1)y1=y; }
+  for (const pts of [...paths.map(p => p.pts), mapP || []]) for (const [x,y] of pts){ if (x<x0)x0=x; if (x>x1)x1=x; if (y<y0)y0=y; if (y>y1)y1=y; }
   const MIN = 6;
   if (x1 - x0 < MIN){ const m = (x0 + x1) / 2; x0 = m - MIN/2; x1 = m + MIN/2; }
   if (y1 - y0 < MIN){ const m = (y0 + y1) / 2; y0 = m - MIN/2; y1 = m + MIN/2; }
@@ -1053,8 +1215,17 @@ function draw(){
     const Y = Math.round(sy(k*step)) + .5; ctx.beginPath(); ctx.moveTo(0,Y); ctx.lineTo(W,Y); ctx.stroke();
   }
 
-  // paths
+  // the map (Live tab): a soft band about as wide as a doorway, with its centre line
   ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  if (mapP && mapP.length > 1){
+    const line = () => { ctx.beginPath(); mapP.forEach(([x,y], i) => i ? ctx.lineTo(sx(x), sy(y)) : ctx.moveTo(sx(x), sy(y))); ctx.stroke(); };
+    ctx.strokeStyle = COL.muted;
+    ctx.globalAlpha = .2; ctx.lineWidth = Math.min(34, Math.max(10, 0.8 * V.sc)); line();
+    ctx.globalAlpha = .55; ctx.lineWidth = 1.5; line();
+    ctx.globalAlpha = 1;
+  }
+
+  // paths
   for (const p of paths){
     if (p.pts.length < 2) continue;
     ctx.globalAlpha = p.a; ctx.strokeStyle = p.col; ctx.lineWidth = p.w;
@@ -1066,17 +1237,21 @@ function draw(){
     ctx.globalAlpha = 1;
   }
 
-  // start marker
+  // start marker (not while the instructions sit in the middle of an empty screen)
   const X0 = sx(0), Y0 = sy(0);
-  ctx.strokeStyle = COL.text; ctx.lineWidth = 2; ctx.fillStyle = COL.ink;
-  ctx.beginPath(); ctx.arc(X0, Y0, 8, 0, TAU); ctx.fill(); ctx.stroke();
-  ctx.fillStyle = COL.text; ctx.font = '700 9px ui-monospace, Menlo, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText('S', X0, Y0 + .5);
+  if (S.steps.length || S.recording || mapP){
+    ctx.strokeStyle = COL.text; ctx.lineWidth = 2; ctx.fillStyle = COL.ink;
+    ctx.beginPath(); ctx.arc(X0, Y0, 8, 0, TAU); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = COL.text; ctx.font = '700 9px ui-monospace, Menlo, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('S', X0, Y0 + .5);
+  }
 
   // current position + heading wedge
   const mp = mainPts(), last = mp[mp.length - 1];
-  const cx = sx(last[0]), cy = sy(last[1]), h = liveRel();
-  const dotCol = S.view === 'raw' ? COL.raw : COL.straight;
+  if (!D || Math.hypot(D[0] - last[0], D[1] - last[1]) > 3) D = last.slice();
+  else { D[0] += (last[0] - D[0]) * .25; D[1] += (last[1] - D[1]) * .25; }
+  const cx = sx(D[0]), cy = sy(D[1]), h = liveRel();
+  const dotCol = S.view === 'raw' ? COL.raw : live && S.offMap ? COL.rec : COL.straight;
   if (S.steps.length || S.recording){
     ctx.save(); ctx.translate(cx, cy); ctx.rotate(h);
     const g = ctx.createLinearGradient(0, 0, 0, -46);
@@ -1142,14 +1317,25 @@ function ui(throttled){
   const hd = ((Math.round(liveRel() / DEG) % 360) + 360) % 360;
   $('vHead').textContent = String(hd).padStart(3, '0');
   const el = S.elapsed + (S.recording ? Date.now() - S.segStart : 0);
+  const live = S.mode === 'live', noMap = live && !hasMap();
   $('status').classList.toggle('rec', S.recording);
-  $('statusText').textContent = S.recording ? 'Rec ' + fmtTime(el) : (n ? 'Paused ' + fmtTime(el) : 'Idle');
+  $('statusText').textContent = S.recording ? (live ? 'Live ' : 'Rec ') + fmtTime(el) : (n ? 'Paused ' + fmtTime(el) : 'Idle');
   const b = $('btnStart');
   b.textContent = S.recording ? 'Stop' : (n ? 'Resume' : 'Start');
   b.classList.toggle('rec', S.recording);
-  $('empty').hidden = n > 0 || S.recording;
+  const empty = !(n > 0 || S.recording);
+  $('empty').hidden = !empty;
+  if (empty){
+    $('empty').classList.toggle('card', live && !noMap);
+    $('emptyH').textContent = !live ? 'Tap Start, then walk' : noMap ? 'No map yet' : 'Stand at S, then tap Start';
+    $('emptyP').textContent = !live ? 'Hold the phone flat in front of you, screen up. Begin facing along a wall so the grid lines up with your rooms.'
+      : noMap ? 'Walk your route on the Map tab first. That walk becomes the map you walk on here.'
+      : 'Face the way you faced when you started the map, then walk as usual. The dot shows where you are on it.';
+  }
   $('btnHome').hidden = n < 4;
   $('tilt').hidden = !(S.recording && (Math.abs(S.beta) > 55 || Math.abs(S.gamma) > 45)) || !$('banner').hidden;
+  $('offMap').hidden = !(live && S.offMap) || !$('tilt').hidden || !$('banner').hidden;
+  document.querySelectorAll('#modeSeg button').forEach(x => x.setAttribute('aria-pressed', x.dataset.m === S.mode));
   document.querySelectorAll('#viewSeg button').forEach(x => x.setAttribute('aria-pressed', x.dataset.v === S.view));
   document.querySelectorAll('#srcSeg button').forEach(x => x.setAttribute('aria-pressed', x.dataset.s === S.source));
   document.querySelectorAll('#joinSeg button').forEach(x => x.setAttribute('aria-pressed', x.dataset.j === S.join));
@@ -1183,12 +1369,9 @@ document.addEventListener('visibilitychange', () => {
 });
 
 /* ---------- controls ---------- */
-function resetWalk(){
-  S.steps = []; S.trace = []; S.anchors = []; S.refG = null; S.refC = null;
-  S.elapsed = 0; S.lastTraceT = -1e9; S.seen = { uturns:0, joins:0 };
-}
+function resetWalk(){ putWalk(blankWalk()); }
 function start(){
-  if (!S.steps.length){ resetWalk(); S.refG = S.liveG; S.refC = S.liveC; S.walkStart = Date.now(); }
+  if (!S.steps.length){ resetWalk(); S.refG = S.liveG; S.refC = S.liveC; S.walkStart = Date.now(); recompute(); }
   S.accG = {s:0,c:0,n:0}; S.accC = {s:0,c:0,n:0}; S.sMax = -Infinity; S.sMin = Infinity;
   S.inPeak = false; S.lastStepT = performance.now();
   S.segStart = Date.now(); S.recording = true;
@@ -1200,10 +1383,24 @@ function stop(){
 }
 $('btnStart').onclick = async () => {
   if (S.recording){ stop(); return; }
+  if (S.mode === 'live' && !hasMap()){ toast('Walk your map on the Map tab first'); return; }
   if (!(await ensureSensors())) return;
   $('banner').hidden = true;
+  const fresh = !S.steps.length;
   start();
+  if (S.mode === 'live' && fresh) toast('Walk as usual. Your dot locks onto the map in a few steps.');
 };
+
+// Map | Live. Each tab keeps its own walk; switching swaps them.
+function setMode(m){
+  if (m === S.mode) return;
+  if (S.recording){ toast('Stop the walk first'); return; }
+  save();
+  const cur = takeWalk(); putWalk(S.other); S.other = cur;
+  S.mode = m; store.set('mode', m);
+  V = null; D = null; recompute(); ui();
+}
+document.querySelectorAll('#modeSeg button').forEach(btn => btn.onclick = () => setMode(btn.dataset.m));
 
 $('btnHome').onclick = () => {
   const i = S.steps.length;
@@ -1211,7 +1408,7 @@ $('btnHome').onclick = () => {
   if (S.anchors.some(a => a.i === i)){ toast('Already marked here'); return; }
   S.anchors.push({ i });
   recompute(); ui(); saveSoon();
-  toast(S.view === 'raw' ? 'Marked as the start. Switch to Corrected to see it.' : 'Marked as the start. Loop closed here.');
+  toast(S.mode === 'live' ? 'Back at S: your dot is there now' : S.view === 'raw' ? 'Marked as the start. Switch to Corrected to see it.' : 'Marked as the start. Loop closed here.');
 };
 
 let clearArmed = null;
@@ -1226,7 +1423,8 @@ $('btnClear').onclick = () => {
   clearTimeout(clearArmed); clearArmed = null; b.textContent = 'Clear'; b.classList.remove('armed');
   if (S.recording) stop();
   resetWalk();
-  recompute(); save(); ui(); V = null;
+  if (S.mode === 'map') S.other = blankWalk();   // a live walk on a map that's gone goes with it
+  recompute(); saveAll(); ui(); V = null; D = null;
 };
 
 document.querySelectorAll('#viewSeg button').forEach(btn => btn.onclick = () => { S.view = btn.dataset.v; store.set('view', S.view); ui(); });
@@ -1260,26 +1458,35 @@ $('sheetClose').onclick = () => openSheet(false);
 $('sheetBg').onclick = () => openSheet(false);
 
 /* ---------- persistence, export, import ---------- */
-function snapshot(){
+function snapshot(w){
+  w = w || S;
   return { app:'pathtrace', version:2, exported:new Date().toISOString(), stride:S.stride, threshold:S.thr, source:S.source,
-    refG:S.refG, refC:S.refC, elapsedMs:S.elapsed, steps:S.steps, anchors:S.anchors, trace:S.trace };
+    refG:w.refG, refC:w.refC, elapsedMs:w.elapsed, steps:w.steps, anchors:w.anchors, trace:w.trace };
 }
-function save(){ store.set('walk', snapshot()); }
+const keyOf = mode => mode === 'map' ? 'walk' : 'live';   // the Map tab's walk keeps the old name, so a saved walk is your map
+function save(){ store.set(keyOf(S.mode), snapshot()); }
+function saveAll(){ save(); store.set(keyOf(S.mode === 'map' ? 'live' : 'map'), snapshot(S.other)); }
 let saveT; function saveSoon(){ clearTimeout(saveT); saveT = setTimeout(save, 800); }
-function load(d){
+function parseWalk(d){
   if (!d || !Array.isArray(d.steps)) throw new Error('not a Pathtrace walk file');
-  resetWalk();
-  S.steps = d.steps.filter(s => s && typeof s.g === 'number')
+  const w = blankWalk();
+  w.steps = d.steps.filter(s => s && typeof s.g === 'number')
     .map(s => ({ t:s.t|0, g:s.g, c: typeof s.c === 'number' ? s.c : null, a: typeof s.a === 'number' ? s.a : 0 }));
-  S.trace = Array.isArray(d.trace) ? d.trace.filter(p => Array.isArray(p) && p.length >= 2) : [];
-  S.anchors = Array.isArray(d.anchors) ? d.anchors.filter(a => a && a.i > 0) : [];
-  S.refG = typeof d.refG === 'number' ? d.refG : null;
-  S.refC = typeof d.refC === 'number' ? d.refC : null;
-  S.elapsed = d.elapsedMs || 0;
-  const lastT = S.steps.length ? S.steps[S.steps.length - 1].t : 0;
-  S.walkStart = Date.now() - lastT - 1000;   // a resumed walk carries on the same clock
-  if (typeof d.stride === 'number') S.stride = Math.min(1, Math.max(.4, d.stride));
-  V = null; recompute(); S.seen = { ...S.cache.events }; ui();
+  w.trace = Array.isArray(d.trace) ? d.trace.filter(p => Array.isArray(p) && p.length >= 2) : [];
+  w.anchors = Array.isArray(d.anchors) ? d.anchors.filter(a => a && a.i > 0) : [];
+  w.refG = typeof d.refG === 'number' ? d.refG : null;
+  w.refC = typeof d.refC === 'number' ? d.refC : null;
+  w.elapsed = d.elapsedMs || 0;
+  const lastT = w.steps.length ? w.steps[w.steps.length - 1].t : 0;
+  w.walkStart = Date.now() - lastT - 1000;   // a resumed walk carries on the same clock
+  return w;
+}
+// Put a map walk and a live walk on the two tabs, and open one of them
+function setWalks(mapRec, liveRec, mode){
+  S.mode = mode; store.set('mode', mode);
+  putWalk(mode === 'map' ? mapRec : liveRec); S.other = mode === 'map' ? liveRec : mapRec;
+  S.mapCache = null; V = null; D = null;
+  recompute(); S.seen = { ...S.cache.events }; saveAll(); ui();
 }
 
 function dataURLtoBlob(u){
@@ -1289,12 +1496,14 @@ function dataURLtoBlob(u){
 }
 $('btnExport').onclick = async () => {
   if (!S.steps.length){ toast('Nothing to export yet. Record a walk first.'); return; }
-  const d = new Date(), name = 'walk-' + d.toISOString().slice(0,16).replace(/[:T]/g, '-');
+  const live = S.mode === 'live', d = new Date(), name = (live ? 'live-' : 'walk-') + d.toISOString().slice(0,16).replace(/[:T]/g, '-');
+  const data = snapshot();
+  if (live){ data.mode = 'live'; data.map = snapshot(S.other); }   // a live walk only makes sense with its map
   const png = dataURLtoBlob(cv.toDataURL('image/png'));
-  const json = new Blob([JSON.stringify(snapshot())], { type:'application/json' });
+  const json = new Blob([JSON.stringify(data)], { type:'application/json' });
   const files = [ new File([png], name + '.png', { type:'image/png' }), new File([json], name + '.json', { type:'application/json' }) ];
   if (navigator.canShare && navigator.canShare({ files })){
-    try { await navigator.share({ files, title:'Pathtrace walk' }); return; }
+    try { await navigator.share({ files, title: live ? 'Pathtrace live walk' : 'Pathtrace walk' }); return; }
     catch(e){ if (e.name === 'AbortError') return; }
   }
   for (const f of files){
@@ -1306,24 +1515,37 @@ $('importFile').onchange = e => {
   const f = e.target.files[0]; if (!f) return;
   const rd = new FileReader();
   rd.onload = () => {
-    try { if (S.recording) stop(); load(JSON.parse(rd.result)); save(); openSheet(false); toast('Opened ' + f.name); }
+    try {
+      if (S.recording) stop();
+      const d = JSON.parse(rd.result);
+      if (d && d.map && Array.isArray(d.map.steps)) setWalks(parseWalk(d.map), parseWalk(d), 'live');   // a live walk, with its map
+      else setWalks(parseWalk(d), blankWalk(), S.mode);   // a walk: your map now (a live walk on the old one no longer fits)
+      if (typeof d.stride === 'number') setStride(d.stride);
+      openSheet(false); toast('Opened ' + f.name);
+    }
     catch(err){ toast('Could not open that file: ' + err.message); }
   };
   rd.readAsText(f); e.target.value = '';
 };
 
+const LIVE_DEMO = [[0, 2.4], [90, 1.2], [0, 2.6], [180, 2.6], [270, 1.2], [180, 2.4]];   // up one side of the bed, turn round, back out
 $('demoBtn').onclick = () => {
   if (S.recording) stop();
-  const w = simulateWalk(DEMO, 3, DEMO_NOISE);
-  load({ steps: w.steps, trace: w.trace, refG: w.refG, refC: w.refC, elapsedMs: w.elapsedMs, stride: S.stride });
-  save(); openSheet(false);
-  S.view = 'both'; store.set('view', S.view); ui();
-  toast('Demo: a bedroom walk, raw and corrected');
+  const rec = w => parseWalk({ steps: w.steps, trace: w.trace, refG: w.refG, refC: w.refC, elapsedMs: w.elapsedMs });
+  setWalks(rec(simulateWalk(DEMO, 3, DEMO_NOISE)), rec(simulateWalk(LIVE_DEMO, 10, DEMO_NOISE)), S.mode);
+  openSheet(false);
+  if (S.mode === 'map'){ S.view = 'both'; store.set('view', S.view); ui(); }
+  toast(S.mode === 'live' ? 'Demo: a second walk, tracked on the bedroom map' : 'Demo: a bedroom walk, raw and corrected');
 };
 
 /* ---------- boot ---------- */
-try { const w = store.get('walk', null); if (w && w.steps && w.steps.length){ load(w); toast('Restored your last walk'); } } catch(e){}
-recompute(); ui();
+try {
+  const rec = k => { const d = store.get(k, null); return d && Array.isArray(d.steps) && d.steps.length ? parseWalk(d) : blankWalk(); };
+  const m = rec('walk'), l = rec('live');
+  putWalk(S.mode === 'map' ? m : l); S.other = S.mode === 'map' ? l : m;
+  if (S.steps.length) toast(S.mode === 'live' ? 'Restored your live walk' : 'Restored your last walk');
+} catch(e){}
+recompute(); S.seen = { ...S.cache.events }; ui();
 requestAnimationFrame(draw);
 })();
 </script>
