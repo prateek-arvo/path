@@ -9,9 +9,10 @@
 <meta name="apple-mobile-web-app-title" content="Pathtrace">
 <meta name="theme-color" content="#0b1a2b">
 <title>Pathtrace</title>
+<link rel="icon" href="data:,">
 <style>
 /* Layout: full-height phone tool. Header, map canvas filling the middle, control deck at the bottom.
-   Blueprint palette: ink-blue ground, faint survey grid, signal-yellow raw trace, cyan straightened trace. */
+   Blueprint palette: ink-blue ground, faint survey grid, signal-yellow raw trace, cyan corrected trace. */
 :root{
   --ink:#0b1a2b;
   --panel:#10243a;
@@ -71,8 +72,13 @@ main{flex:1;position:relative;min-height:0;overflow:hidden}
   border-radius:10px;padding:10px 12px;line-height:1.4;font-size:14px;z-index:2}
 .banner span{flex:1;min-width:0}
 .banner button{background:none;border:0;font-size:20px;line-height:1;padding:0 2px;color:#ffd9d3}
-.toast{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);background:var(--panel-2);border:1px solid var(--line);
+.toast{position:absolute;left:50%;bottom:64px;transform:translateX(-50%);background:var(--panel-2);border:1px solid var(--line);
   padding:9px 14px;border-radius:10px;font-size:13.5px;white-space:nowrap;max-width:calc(100% - 32px);overflow:hidden;text-overflow:ellipsis;z-index:2}
+.home-btn{position:absolute;right:max(16px,env(safe-area-inset-right,0px));bottom:12px;display:flex;align-items:center;gap:7px;
+  height:40px;padding:0 14px 0 11px;border-radius:999px;border:1px solid var(--line);background:rgba(23,49,77,.94);
+  color:var(--text);font-weight:600;font-size:14px;z-index:1}
+.home-btn svg{width:18px;height:18px;stroke:var(--straight)}
+.home-btn:active{transform:scale(.97)}
 
 footer{display:flex;flex-direction:column;gap:10px;background:var(--panel);border-top:1px solid var(--line);
   padding-top:10px;padding-bottom:calc(env(safe-area-inset-bottom,0px) + 12px);
@@ -83,9 +89,10 @@ footer{display:flex;flex-direction:column;gap:10px;background:var(--panel);borde
 .spark-label{left:8px}.spark-thr{right:8px}
 .seg{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:3px;background:var(--ink);border:1px solid var(--line);border-radius:10px;padding:3px}
 .seg.two{grid-template-columns:repeat(2,minmax(0,1fr))}
-.seg button{display:flex;align-items:center;justify-content:center;gap:7px;height:34px;border:0;border-radius:7px;background:none;color:var(--muted);font-weight:600;font-size:14px}
+.seg.four{grid-template-columns:repeat(4,minmax(0,1fr))}
+.seg button{display:flex;align-items:center;justify-content:center;gap:7px;height:34px;border:0;border-radius:7px;background:none;color:var(--muted);font-weight:600;font-size:14px;min-width:0}
 .seg button[aria-pressed="true"]{background:var(--panel-2);color:var(--text)}
-.sw{width:14px;height:3px;border-radius:2px;display:inline-block}
+.sw{width:14px;height:3px;border-radius:2px;display:inline-block;flex:none}
 .sw.raw{background:var(--raw)}.sw.straight{background:var(--straight)}
 .controls{display:grid;grid-template-columns:1fr 1.5fr 1fr;gap:10px}
 .btn{height:52px;border-radius:12px;border:1px solid var(--line);background:var(--panel-2);font-weight:600;font-size:15px;color:var(--text)}
@@ -102,9 +109,11 @@ footer{display:flex;flex-direction:column;gap:10px;background:var(--panel);borde
   padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
 .sheet-head{display:flex;align-items:center;justify-content:space-between;position:sticky;top:-6px;background:var(--panel);padding:10px 0;z-index:1}
 .sheet-head h2{margin:0;font-size:18px}
+.group{margin:18px 0 0;font:600 10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
 .field{padding:14px 0;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:8px}
+.group + .field{margin-top:8px}
 .field > label,.field .row label{font-weight:600}
-.row{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.row{display:flex;justify-content:space-between;align-items:center;gap:12px}
 output{font:600 15px var(--mono);font-variant-numeric:tabular-nums;color:var(--raw)}
 .hint{margin:0;color:var(--muted);font-size:13px;line-height:1.45;max-width:62ch}
 .stepper{display:grid;grid-template-columns:40px 1fr 40px;gap:10px;align-items:center}
@@ -114,8 +123,12 @@ input[type=range]{width:100%;accent-color:var(--raw)}
 .inline input[type=number]{flex:1;min-width:0;height:40px;border-radius:10px;border:1px solid var(--line);background:var(--ink);color:var(--text);padding:0 12px;font:500 16px var(--mono)}
 label.file{position:relative;display:inline-flex;align-items:center;overflow:hidden}
 label.file input{position:absolute;inset:0;opacity:0}
+.switch{flex:none;position:relative;width:50px;height:30px;border-radius:15px;border:0;background:var(--line);transition:background .15s}
+.switch span{position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:50%;background:var(--text);transition:transform .15s}
+.switch[aria-checked="true"]{background:var(--straight)}
+.switch[aria-checked="true"] span{transform:translateX(20px);background:var(--ink)}
 .tips ul{margin:0;padding-left:18px;color:var(--muted);font-size:13.5px;line-height:1.5;display:grid;gap:4px}
-@media (prefers-reduced-motion:reduce){.status.rec i{animation:none}.btn:active{transform:none}}
+@media (prefers-reduced-motion:reduce){.status.rec i{animation:none}.btn:active,.home-btn:active{transform:none}.switch,.switch span{transition:none}}
 </style>
 </head>
 <body>
@@ -144,13 +157,17 @@ label.file input{position:absolute;inset:0;opacity:0}
   </div>
   <div id="banner" class="banner" hidden><span id="bannerText"></span><button id="bannerClose" aria-label="Dismiss">×</button></div>
   <div id="toast" class="toast" hidden></div>
+  <button id="btnHome" class="home-btn" hidden>
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11l8-6 8 6"/><path d="M6 10v9h12v-9"/><path d="M10 19v-5h4v5"/></svg>
+    I'm at start
+  </button>
 </main>
 
 <footer>
   <div class="spark"><canvas id="spark"></canvas><span class="spark-label">Step signal</span><span class="spark-thr" id="sparkThr">threshold 1.2</span></div>
   <div class="seg" id="viewSeg" role="group" aria-label="Trace view">
     <button data-v="raw"><i class="sw raw"></i>Raw</button>
-    <button data-v="straight"><i class="sw straight"></i>Straight</button>
+    <button data-v="straight"><i class="sw straight"></i>Corrected</button>
     <button data-v="both">Both</button>
   </div>
   <div class="controls">
@@ -164,16 +181,22 @@ label.file input{position:absolute;inset:0;opacity:0}
 <section id="sheet" class="sheet" hidden aria-label="Settings">
   <div class="sheet-head"><h2>Settings</h2><button id="sheetClose" class="btn small">Done</button></div>
 
+  <h3 class="group">Steps</h3>
   <div class="field">
     <div class="row"><label for="stride">Stride length</label><output id="strideOut">0.70 m</output></div>
     <div class="stepper"><button data-d="-0.01" aria-label="Shorter">−</button><input type="range" id="stride" min="0.40" max="1.00" step="0.01"><button data-d="0.01" aria-label="Longer">+</button></div>
-    <p class="hint">Changing it rescales the whole trace, including a walk you already recorded.</p>
+    <p class="hint">Your typical step. Changing it rescales the whole trace, including a walk you already recorded.</p>
+  </div>
+
+  <div class="field">
+    <div class="row"><label for="adaptive">Vary step length</label><button id="adaptive" class="switch" role="switch" aria-checked="true"><span></span></button></div>
+    <p class="hint">Soft steps (slowing down, edging round furniture) count as shorter than your stride, firm ones as longer.</p>
   </div>
 
   <div class="field">
     <label for="calDist">Calibrate from a known distance</label>
     <div class="inline"><input id="calDist" type="number" inputmode="decimal" placeholder="metres walked" step="0.1" min="0"><button id="calGo" class="btn small">Set stride</button></div>
-    <p class="hint">Clear, walk a straight line you know the length of (a hallway, or 5 m of tape), stop, then enter the distance. Stride becomes distance ÷ steps.</p>
+    <p class="hint">Clear, walk a straight line you know the length of (a hallway, or 5 m of tape), stop, then enter the distance.</p>
   </div>
 
   <div class="field">
@@ -182,12 +205,19 @@ label.file input{position:absolute;inset:0;opacity:0}
     <p class="hint">Watch the step signal strip while walking. Each footstep should cross the dashed line once. Lower it if steps are missed, raise it if one step counts twice.</p>
   </div>
 
+  <h3 class="group">Corrected view</h3>
   <div class="field">
-    <div class="row"><label for="merge">Merge nearby paths</label><output id="mergeOut">0.8 m</output></div>
-    <input type="range" id="merge" min="0" max="1.5" step="0.1">
-    <p class="hint">Straight view only. When you walk back along a line you already walked, and the new line lands within this distance of it, the two become one. Set to 0 to turn it off. Raise it if backtracking still draws a second line; lower it if two real corridors get merged.</p>
+    <div class="row"><label for="snap">Straighten along walls</label><button id="snap" class="switch" role="switch" aria-checked="true"><span></span></button></div>
+    <p class="hint">Walking nearly parallel to the walls is squared up, which also cancels the gyro's slow drift. Diagonal walking keeps its direction.</p>
   </div>
 
+  <div class="field">
+    <label>Join paths you walk again</label>
+    <div class="seg four" id="joinSeg" role="group" aria-label="Join paths you walk again"><button data-j="off">Off</button><button data-j="low">Low</button><button data-j="normal">Normal</button><button data-j="high">High</button></div>
+    <p class="hint">When you turn around on the spot, the trace follows your path back. When you walk alongside an earlier stretch, it snaps onto it and spreads the error over the steps in between. Lower this if separate corridors get joined; raise it if a return path still runs beside the old one.</p>
+  </div>
+
+  <h3 class="group">Sensors and data</h3>
   <div class="field">
     <label>Heading source</label>
     <div class="seg two" id="srcSeg" role="group" aria-label="Heading source"><button data-s="gyro">Gyro</button><button data-s="compass">Compass</button></div>
@@ -200,16 +230,17 @@ label.file input{position:absolute;inset:0;opacity:0}
       <label class="btn small file">Open walk file<input id="importFile" type="file" accept="application/json,.json"></label>
       <button id="demoBtn" class="btn small">Load demo walk</button>
     </div>
-    <p class="hint">Export saves a picture and a .json of the walk. Open a .json here to look at it again, on any device.</p>
+    <p class="hint">Export saves a picture and a .json of the walk. Open a .json here to look at it again on any device. The demo is a simulated bedroom walk: both sides of the bed, then back out the door.</p>
   </div>
 
   <div class="field tips">
     <label>For a good trace</label>
     <ul>
       <li>Hold the phone flat in front of you, screen up, like reading a map.</li>
+      <li>Start at a spot you can find again, like the door, facing along a wall.</li>
       <li>Walk at a normal, steady pace. Shuffling and very slow steps get missed.</li>
+      <li>When you're back at the start, tap I'm at start. The Corrected view closes the loop there.</li>
       <li>Keep the screen on. iPhone stops sending motion data when it locks or you switch apps.</li>
-      <li>Finish where you started to see how far the trace drifted (the To start reading).</li>
     </ul>
   </div>
 </section>
@@ -217,9 +248,376 @@ label.file input{position:absolute;inset:0;opacity:0}
 <script>
 (() => {
 'use strict';
-const DEG = Math.PI / 180;
-const TAU = Math.PI * 2;
+/* PIPELINE START */
+/* Path maths. Pure functions: a recorded walk plus settings in, raw and corrected paths out.
+   Coordinates are metres, +y is the direction you faced when you pressed Start, headings are clockwise. */
+const DEG = Math.PI / 180, TAU = Math.PI * 2, Q = Math.PI / 2;
 const wrap = a => { a = (a + Math.PI) % TAU; if (a < 0) a += TAU; return a - Math.PI; };
+const JOIN = { off: 0, low: 0.7, normal: 1, high: 1.4 };
+function median(arr){
+  if (!arr.length) return 0;
+  const s = arr.slice().sort((x, y) => x - y), m = s.length >> 1;
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
+
+function relHeadings(w, source){
+  const st = w.steps; if (!st.length) return [];
+  const useC = source === 'compass';
+  const rg = w.refG != null ? w.refG : st[0].g;
+  const fc = st.find(s => s.c != null);
+  const rc = w.refC != null ? w.refC : (fc ? fc.c : null);
+  return st.map(s => (useC && s.c != null && rc != null) ? wrap(s.c - rc) : wrap(s.g - rg));
+}
+
+// Firmer steps are longer strides, softer ones shorter (length grows with the 4th root of the bounce).
+function stepLengths(w, cfg){
+  const amps = w.steps.map(s => s.a).filter(a => a > 0);
+  const med = cfg.adaptive && amps.length >= 5 ? median(amps) : 0;
+  return w.steps.map(s => cfg.stride * (med && s.a > 0 ? Math.min(1.2, Math.max(0.8, Math.pow(s.a / med, 0.25))) : 1));
+}
+
+function buildPath(hs, lens){
+  let x = 0, y = 0; const pts = [[0, 0]];
+  hs.forEach((h, i) => { x += Math.sin(h) * lens[i]; y += Math.cos(h) * lens[i]; pts.push([x, y]); });
+  return pts;
+}
+
+// Seconds spent facing steadily crosswise (50–130° off your earlier heading, turning slower than
+// 50°/s) between two moments. Turning on the spot sweeps through crosswise without settling there;
+// walking around the foot of a bed holds it. null when there is no heading trace for that time.
+function dwellSecs(trace, t0, t1, gOut){
+  if (!trace || trace.length < 4) return null;
+  let lo = 0, hi = trace.length;
+  while (lo < hi){ const mid = (lo + hi) >> 1; if (trace[mid][0] < t0) lo = mid + 1; else hi = mid; }
+  if (lo >= trace.length - 1 || trace[lo][0] > t1) return null;
+  let secs = 0;
+  for (let i = lo; i < trace.length - 1 && trace[i][0] < t1; i++){
+    const off = Math.abs(wrap(trace[i][1] - gOut));
+    if (off <= 50 * DEG || off >= 130 * DEG) continue;
+    const a = trace[Math.max(0, i - 1)], b = trace[Math.min(trace.length - 1, i + 2)];
+    const rate = Math.abs(wrap(b[1] - a[1])) / Math.max(0.05, (b[0] - a[0]) / 1000);
+    if (rate < 50 * DEG) secs += Math.min(300, trace[i + 1][0] - trace[i][0]) / 1000;
+  }
+  return secs;
+}
+
+/* A U-turn is a reversal (>= 140°) between two straight runs with at most two steps in between.
+   Steps in between are pivots (no distance) unless you spent real time walking crosswise,
+   which means you walked around something (the foot of a bed), not turned on the spot. */
+function findUturns(hs, w){
+  const st = w.steps, n = hs.length, pivot = new Set(), startAt = new Map();
+  const amps = st.map(s => s.a).filter(a => a > 0), med = amps.length >= 5 ? median(amps) : 0;
+  const TURN = 35 * DEG, REV = 140 * DEG;
+  for (let k = 0; k < n - 1; k++){
+    if (k > 0 && Math.abs(wrap(hs[k] - hs[k - 1])) >= TURN) continue;
+    for (let m = k + 1; m <= Math.min(n - 1, k + 3); m++){
+      if (Math.abs(wrap(hs[m] - hs[k])) < REV) continue;
+      if (m < n - 1 && Math.abs(wrap(hs[m + 1] - hs[m])) >= TURN) break;
+      // steps in between must be mid-turn, not more walking in either direction
+      let mid = true;
+      for (let q = k + 1; q < m; q++) if (Math.abs(wrap(hs[q] - hs[k])) < TURN || Math.abs(wrap(hs[q] - hs[m])) < TURN) mid = false;
+      if (!mid) break;
+      let uturn = true;
+      if (m > k + 1){
+        const dw = dwellSecs(w.trace, st[k].t, st[m].t, st[k].g);
+        if (dw != null) uturn = dw < 0.3;
+        else {                                  // no heading trace (older files): pivots are soft steps
+          uturn = med > 0;
+          for (let q = k + 1; q < m; q++) if (!(st[q].a > 0 && st[q].a < 0.7 * med)) uturn = false;
+        }
+      }
+      if (uturn){ for (let q = k + 1; q < m; q++) pivot.add(q); startAt.set(m, k); k = m - 1; }
+      break;
+    }
+  }
+  return { pivot, startAt };
+}
+
+/* Square up walking that runs nearly along the room's walls, and learn the gyro's drift from it.
+   Walking more than 20° off the walls (diagonals) keeps its own, drift-corrected heading. */
+function correctHeadings(hs, pivot, cfg, st){
+  const n = hs.length;
+  if (!cfg.snap || n < 3) return { H: hs.slice(), axis: 0 };
+  const idx = [];                                // early straight-walking steps
+  for (let i = 1; i < n && idx.length < 40; i++) if (!pivot.has(i) && Math.abs(wrap(hs[i] - hs[i - 1])) < 20 * DEG) idx.push(i);
+  if (idx.length < 3) return { H: hs.slice(), axis: 0 };
+  // Try every wall direction and drift rate; keep the pair that lines up the most early steps.
+  // The first straight steps count double (you start facing along a wall); zero drift is slightly preferred.
+  const t0 = st[0].t;
+  let best = -1, axis = 0, rate = 0;
+  for (let rr = -30; rr <= 30; rr++){
+    const r = rr * 0.05 * DEG / 1000;              // -1.5 … +1.5 °/s, in rad per ms
+    for (let ad = -45; ad < 45; ad++){
+      const a = ad * DEG; let score = 0;
+      for (let k = 0; k < idx.length; k++){
+        const i = idx[k], res = Math.abs(wrap(4 * (hs[i] - r * (st[i].t - t0) - a))) / 4;
+        if (res < 12 * DEG){ const u = res / (12 * DEG); score += (1 - u * u) * (k < 6 ? 2 : 1); }
+      }
+      score *= 1 - 0.1 * Math.abs(rr) / 30;
+      if (score > best){ best = score; axis = a; rate = r; }
+    }
+  }
+  const out = new Array(n);
+  let drift = 0, lastT = t0;
+  for (let i = 0; i < n; i++){
+    const dt = Math.max(0, st[i].t - lastT); lastT = st[i].t;
+    drift += rate * dt;
+    const h = wrap(hs[i] - drift);
+    let s = Math.sin(h), c = Math.cos(h);
+    for (const j of [i - 1, i + 1]){
+      if (j < 0 || j >= n || pivot.has(j) || Math.abs(wrap(hs[j] - hs[i])) >= 30 * DEG) continue;
+      s += Math.sin(hs[j] - drift); c += Math.cos(hs[j] - drift);
+    }
+    const hm = Math.atan2(s, c);
+    const snapped = wrap(axis + Math.round(wrap(hm - axis) / Q) * Q);
+    if (Math.abs(wrap(hm - snapped)) < 20 * DEG){
+      out[i] = snapped;
+      if (!pivot.has(i)){                           // learn the drift (offset and rate) from wall-aligned steps
+        const e = Math.max(-6 * DEG, Math.min(6 * DEG, wrap(h - snapped)));
+        drift += 0.08 * e;
+        rate += 0.004 * e / Math.max(dt, 200);
+      }
+    } else out[i] = h;
+  }
+  return { H: out, axis };
+}
+
+/* ---- following an earlier stretch of the path ---- */
+// A follow state sits on segment s (from point s-1 to point s) at fraction f, moving dir (+1 the way
+// it was first walked, -1 backwards), never beyond segment lim.
+function segLen(pts, s){ const a = pts[s - 1], b = pts[s]; return Math.hypot(b[0] - a[0], b[1] - a[1]); }
+function travelDir(pts, s, dir){
+  const a = pts[s - 1], b = pts[s], x = b[0] - a[0], y = b[1] - a[1];
+  return Math.hypot(x, y) < 1e-6 ? null : Math.atan2(dir * x, dir * y);
+}
+function posAt(pts, st){ const a = pts[st.s - 1], b = pts[st.s]; return [a[0] + (b[0] - a[0]) * st.f, a[1] + (b[1] - a[1]) * st.f]; }
+
+// Move len metres along the old path. Where the old path turns and you don't, or where it ends,
+// hold there: step counts out and back often differ by one. After holding 1.5 steps' worth,
+// you have left it (null).
+function advanceAlong(pts, st, len, h){
+  let s = st.s, f = st.f, rem = len;
+  const dir = st.dir, lim = st.lim;
+  for (let g = 0; g < 10000; g++){
+    const sl = segLen(pts, s);
+    if (sl >= 1e-6){
+      const avail = dir > 0 ? (1 - f) * sl : f * sl;
+      if (rem <= avail){ f += dir * rem / sl; return { ...st, s, f, held: 0 }; }
+      rem -= avail; f = dir > 0 ? 1 : 0;
+    }
+    let ns = s + dir;
+    while (ns >= 1 && ns <= lim && segLen(pts, ns) < 1e-6) ns += dir;
+    if (ns < 1 || ns > lim || Math.abs(wrap(h - travelDir(pts, ns, dir))) >= 50 * DEG){
+      const held = (st.held || 0) + rem / len;
+      return held <= 1.5 ? { ...st, s, f, held } : null;
+    }
+    s = ns; f = dir > 0 ? 0 : 1;
+  }
+  return null;
+}
+// You turned before the old path did: find its corner within maxD metres ahead that goes your way.
+function cornerAhead(pts, st, h, maxD){
+  let s = st.s;
+  const dir = st.dir, sl = segLen(pts, s);
+  let d = dir > 0 ? (1 - st.f) * sl : st.f * sl;
+  for (let g = 0; g < 40 && d <= maxD; g++){
+    s += dir;
+    if (s < 1 || s > st.lim) return null;
+    const td = travelDir(pts, s, dir);
+    if (td == null) continue;
+    if (Math.abs(wrap(h - td)) < 35 * DEG) return { ...st, s, f: dir > 0 ? 0 : 1 };
+    d += segLen(pts, s);
+  }
+  return null;
+}
+function followStep(pts, fol, h, len){
+  const cur = travelDir(pts, fol.s, fol.dir);
+  let st = null;
+  if (cur != null && Math.abs(wrap(h - cur)) < 50 * DEG) st = advanceAlong(pts, fol, len, h);
+  else { const c = cornerAhead(pts, fol, h, 1.6); if (c) st = advanceAlong(pts, c, len, h); }
+  if (!st) return null;
+  Object.assign(fol, st);
+  return posAt(pts, st);
+}
+
+/* Revisit check: is this step running alongside (or against) a stretch walked at least 5 m ago, and
+   closer to it than the sideways error you could have built up since? Once headings are squared up,
+   sideways error comes from miscounted steps across (8% of sideways travel) and a little leftover
+   heading error (2.5% of travel along), plus 0.55 m for steps lost or doubled at turns. Capped at
+   1.6 m, times the join setting. While you follow an old stretch you inherit its travel figures,
+   so ground you walked back over doesn't add error. */
+function findMatch(pts, cum, fx, fy, i, p, h, cumNow, fxNow, fyNow, axis, strength){
+  const ux = Math.sin(h), uy = Math.cos(h), COS = Math.cos(30 * DEG);
+  const along = Math.abs(Math.cos(h - axis)), across = Math.abs(Math.sin(h - axis));
+  let best = null, bestScore = 1;
+  for (let j = 1; j <= i - 7; j++){
+    if (cumNow - cum[j] < 5) break;
+    const a = pts[j - 1], b = pts[j], vx = b[0] - a[0], vy = b[1] - a[1], sl = Math.hypot(vx, vy);
+    if (sl < 0.2) continue;
+    const ca = (vx * ux + vy * uy) / sl;
+    if (Math.abs(ca) < COS) continue;
+    let t = ((p[0] - a[0]) * vx + (p[1] - a[1]) * vy) / (sl * sl);
+    if (t < -0.3 || t > 1.3) continue;
+    t = Math.max(0, Math.min(1, t));
+    const qx = a[0] + vx * t, qy = a[1] + vy * t, d = Math.hypot(p[0] - qx, p[1] - qy);
+    const dX = Math.abs(fxNow - fx[j]), dY = Math.abs(fyNow - fy[j]);
+    const side = along * dX + across * dY, fwd = across * dX + along * dY;
+    const gate = Math.min(1.6, 0.55 + 0.08 * side + 0.025 * fwd) * strength;
+    if (d >= gate) continue;
+    const score = d / gate;
+    if (score < bestScore){ bestScore = score; best = { j, t, q: [qx, qy], off: [qx - p[0], qy - p[1]], par: ca > 0 ? 1 : -1, score }; }
+  }
+  return best;
+}
+
+/* Close a loop: you are at p by dead reckoning but must be at q. Stretch or shrink the free steps
+   since point `from` (least squares, each by at most half) and shift whatever is left gradually,
+   so the error is spread over the walk instead of appearing as a jump. Rewrites pts[from+1 .. i-1]. */
+function spread(pts, H, L, from, i, p, q){
+  const cx = q[0] - p[0], cy = q[1] - p[1];
+  let mxx = 0, mxy = 0, myy = 0, tot = 0;
+  for (let k = from + 1; k <= i; k++){
+    const w = L[k - 1]; if (!w) continue;
+    const ux = Math.sin(H[k - 1]), uy = Math.cos(H[k - 1]);
+    mxx += w * ux * ux; mxy += w * ux * uy; myy += w * uy * uy; tot += w;
+  }
+  if (tot <= 0) return;
+  const det = mxx * myy - mxy * mxy, tr = mxx + myy;
+  let lx = 0, ly = 0;
+  if (det > 0.02 * tr * tr){ lx = (myy * cx - mxy * cy) / det; ly = (mxx * cy - mxy * cx) / det; }
+  const dl = []; let ax = 0, ay = 0;
+  for (let k = from + 1; k <= i; k++){
+    const w = L[k - 1], ux = Math.sin(H[k - 1]), uy = Math.cos(H[k - 1]);
+    const d = w ? Math.max(-0.5 * w, Math.min(0.5 * w, w * (ux * lx + uy * ly))) : 0;
+    dl.push(d); ax += d * ux; ay += d * uy;
+  }
+  const rx = cx - ax, ry = cy - ay;
+  let ox = 0, oy = 0, run = 0;
+  for (let k = from + 1; k < i; k++){
+    const w = L[k - 1], d = dl[k - from - 1];
+    run += w; ox += d * Math.sin(H[k - 1]); oy += d * Math.cos(H[k - 1]);
+    pts[k] = [pts[k][0] + ox + rx * run / tot, pts[k][1] + oy + ry * run / tot];
+  }
+}
+
+function buildCorrected(hs, w, lens, cfg){
+  const n = hs.length, events = { uturns: 0, joins: 0 }, pts = [[0, 0]];
+  if (!n) return { pts, events };
+  const { pivot, startAt } = findUturns(hs, w);
+  const { H, axis } = correctHeadings(hs, pivot, cfg, w.steps);
+  const L = lens.map((l, i) => pivot.has(i) ? 0 : l);
+  const cum = [0], fx = [0], fy = [0];   // distance walked; free travel across/along the walls
+  const marks = new Set((w.anchors || []).map(a => a.i));
+  const strength = JOIN[cfg.join] != null ? JOIN[cfg.join] : 1;
+  let anchor = 0, fol = null, cand = null;
+  const lerp = (arr, s, f) => arr[s - 1] + (arr[s] - arr[s - 1]) * f;
+  for (let i = 1; i <= n; i++){
+    const h = H[i - 1], len = L[i - 1], prev = pts[i - 1];
+    let p = [prev[0] + Math.sin(h) * len, prev[1] + Math.cos(h) * len];
+    let fixed = false, inherit = null;
+    if (startAt.has(i - 1)){                      // turned around: walk back over the way you came
+      const k = startAt.get(i - 1);
+      fol = { s: k + 1, f: 1, dir: -1, lim: k + 1, dyn: false };
+      cand = null; events.uturns++;
+    }
+    if (fol){
+      if (fol.dyn) fol.lim = Math.max(1, i - 7);
+      if (len === 0){ p = prev.slice(); fixed = true; }
+      else { const r = followStep(pts, fol, h, len); if (r){ p = r; fixed = true; } else fol = null; }
+      if (fol) inherit = [lerp(fx, fol.s, fol.f), lerp(fy, fol.s, fol.f)];
+    } else if (len > 0 && strength > 0){
+      const ax = len * Math.abs(Math.sin(h - axis)), ay = len * Math.abs(Math.cos(h - axis));
+      const m = findMatch(pts, cum, fx, fy, i, p, h, cum[i - 1] + len, fx[i - 1] + ax, fy[i - 1] + ay, axis, strength);
+      if (m){
+        // three steps in a row that agree, or two when the match is close
+        const ev = 1 - m.score;
+        if (cand && Math.abs(m.j - cand.j) <= 6 && Math.hypot(m.off[0] - cand.off[0], m.off[1] - cand.off[1]) < 0.45) cand = { n: cand.n + 1, ev: cand.ev + ev, j: m.j, off: m.off };
+        else cand = { n: 1, ev, j: m.j, off: m.off };
+        if (cand.n >= 3 || (cand.n >= 2 && cand.ev >= 1.4)){   // you're back on an old path
+          spread(pts, H, L, Math.max(anchor, m.j), i, p, m.q);
+          p = m.q.slice();
+          fol = { s: m.j, f: m.t, dir: m.par, lim: Math.max(1, i - 7), dyn: true };
+          inherit = [lerp(fx, m.j, m.t), lerp(fy, m.j, m.t)];
+          fixed = true; cand = null; events.joins++;
+        }
+      } else cand = null;
+    }
+    if (marks.has(i)){                              // you told us you're back at the start
+      spread(pts, H, L, anchor, i, p, [0, 0]);
+      p = [0, 0]; fol = null; cand = null; fixed = true; inherit = [0, 0];
+    }
+    pts.push(p);
+    cum.push(cum[i - 1] + len);
+    if (inherit){ fx.push(inherit[0]); fy.push(inherit[1]); }
+    else {
+      fx.push(fx[i - 1] + (fixed ? 0 : len * Math.abs(Math.sin(h - axis))));
+      fy.push(fy[i - 1] + (fixed ? 0 : len * Math.abs(Math.cos(h - axis))));
+    }
+    if (fixed) anchor = i;
+  }
+  return { pts, events };
+}
+
+function computePaths(w, cfg){
+  const hs = relHeadings(w, cfg.source), lens = stepLengths(w, cfg);
+  const c = buildCorrected(hs, w, lens, cfg);
+  return { hs, lens, raw: buildPath(hs, lens), straight: c.pts, events: c.events };
+}
+
+/* ---- demo walk: a bedroom with the bed against the far wall ---- */
+function mulberry32(a){
+  return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+}
+function simulateWalk(plan, seed, opts){
+  const o = Object.assign({ drift: 0.25, stride: 0.68 }, opts || {});
+  const rnd = mulberry32(seed || 7), N = () => (rnd() + rnd() + rnd() + rnd() - 2) * 1.732;
+  const gy = (deg, tt) => (deg + o.drift * tt / 1000) * DEG;
+  const steps = [], trace = [], truth = [[0, 0]];
+  let t = 0, ts = 0, head = 0, x = 0, y = 0;
+  const move = (dur, h1) => {
+    const t0 = t, h0 = head;
+    for (; ts <= t0 + dur; ts += 100){ const fr = dur ? (ts - t0) / dur : 1; trace.push([ts, +wrap(gy(h0 + (h1 - h0) * fr, ts) + N() * 1.5 * DEG).toFixed(3)]); }
+    t = t0 + dur; head = h1;
+  };
+  const rec = (amp, noise) => {
+    steps.push({ t: Math.round(t), g: +wrap(gy(head, t) + N() * noise * DEG).toFixed(4), c: +wrap(head * DEG + 0.5 + N() * 6 * DEG).toFixed(4), a: +amp.toFixed(2) });
+    truth.push([x, y]);
+  };
+  const turnOf = (from, to) => ((to - from) % 360 + 540) % 360 - 180;
+  const cuts = (k) => o.cut && plan[k] && plan[k][0] !== 'u' && plan[k - 1] && plan[k - 1][0] !== 'u'
+    && Math.abs(turnOf(plan[k - 1][0], plan[k][0])) > 1 && Math.abs(turnOf(plan[k - 1][0], plan[k][0])) < 120;
+  plan.forEach((op, k) => {
+    if (op[0] === 'u'){ const sgn = op[1] || 1; move(op[2] || 450, head + 90 * sgn); rec(0.7, 6); move(op[2] || 450, head + 90 * sgn); return; }
+    let [deg, m, miss] = op;
+    const turn = turnOf(head, deg);
+    if (cuts(k)){
+      // cut the corner: one diagonal step from half a stride before it to half a stride after it
+      const prev = plan[k - 1][0], h0 = head, half = o.stride / 2;
+      move(200, h0 + turn / 2);
+      x += Math.sin(deg * DEG) * half + Math.sin(prev * DEG) * half;
+      y += Math.cos(deg * DEG) * half + Math.cos(prev * DEG) * half;
+      move(500, h0 + turn / 2);
+      rec(2 * (1 + N() * 0.06), 3);
+      move(200, h0 + turn);
+      m -= half;
+    } else if (Math.abs(turn) > 1) move(350, head + turn);
+    if (cuts(k + 1)) m -= o.stride / 2;          // stop half a stride short of a corner you'll cut
+    const n = Math.max(1, Math.round(m / o.stride));
+    for (let q = 0; q < n; q++){
+      const len = m / n * (1 + N() * 0.05);
+      move(520 + N() * 30, head);
+      x += Math.sin(deg * DEG) * len; y += Math.cos(deg * DEG) * len;
+      if (q !== miss && !(o.miss && rnd() < o.miss)) rec(2 * Math.pow(len / o.stride, 4) * (1 + N() * 0.06), 3);
+      if (o.dbl && rnd() < o.dbl) rec(1.2, 6);   // one step counted twice
+    }
+  });
+  return { steps, trace, truth, refG: 0, refC: 0.5, elapsedMs: Math.round(t), anchors: [] };
+}
+// Door at the start. Up to the foot of the bed, along one side to the headboard, turn around, back,
+// across the foot (one step missed), up the other side, turn around, back, and out to the door.
+const BEDROOM = [[0, 2.4], [90, 1.2], [0, 2.6], ['u'], [180, 2.6], [90, 2.6, 1], [0, 2.6], ['u', -1], [180, 2.6], [270, 3.8], [180, 2.4]];
+/* PIPELINE END */
+
 const $ = id => document.getElementById(id);
 const store = {
   get(k, d){ try { const v = localStorage.getItem('pathtrace.' + k); return v == null ? d : JSON.parse(v); } catch(e){ return d; } },
@@ -231,20 +629,26 @@ const COL = { ink: css('--ink'), line: css('--line'), raw: css('--raw'), straigh
 /* ---------- state ---------- */
 const S = {
   permitted:false, sensorsSeen:false, recording:false,
-  steps:[],            // {t: ms since walk start, g: gyro heading (rad, clockwise), c: compass heading or null}
+  steps:[],            // {t: ms since walk start, g: gyro heading (rad, clockwise), c: compass heading or null, a: step bounce}
+  trace:[],            // [t, gyro heading] about 10 times a second while recording
+  anchors:[],          // {i: step count} when you tapped I'm at start
   refG:null, refC:null,
-  walkStart:0, elapsed:0, segStart:0,
+  walkStart:0, elapsed:0, segStart:0, lastTraceT:-1e9,
   stride: store.get('stride', 0.70),
   thr: store.get('thr', 1.2),
   source: store.get('source', 'gyro'),
-  view: store.get('view', 'raw'),
-  merge: store.get('merge', 0.8),
+  view: store.get('view', 'straight'),
+  adaptive: store.get('adaptive', true),
+  snap: store.get('snap', true),
+  join: store.get('join', 'normal'),
   liveG:null, liveC:null, beta:0, gamma:0,
   accG:{s:0,c:0,n:0}, accC:{s:0,c:0,n:0},
-  gEst:9.81, sig:0, inPeak:false, peakT:0, peakV:0, lastStepT:0,
+  gEst:9.81, sig:0, sMax:-Infinity, sMin:Infinity, inPeak:false, peakT:0, peakV:0, lastStepT:0,
   spark:[], stepFlash:0,
-  cache:{ hs:[], raw:[[0,0]], straight:[[0,0]] }
+  seen:{ uturns:0, joins:0 },
+  cache:{ hs:[], lens:[], raw:[[0,0]], straight:[[0,0]], events:{ uturns:0, joins:0 } }
 };
+if (!(S.join in JOIN)) S.join = 'normal';
 
 /* ---------- sensors ---------- */
 async function ensureSensors(){
@@ -288,6 +692,8 @@ function onOrient(e){
     if (S.refC == null && S.liveC != null) S.refC = S.liveC;
     acc(S.accG, S.liveG);
     if (S.liveC != null) acc(S.accC, S.liveC);
+    const t = Date.now() - S.walkStart;      // heading trace: tells a U-turn from walking round the bed
+    if (t - S.lastTraceT >= 100){ S.trace.push([t, +S.liveG.toFixed(3)]); S.lastTraceT = t; }
   }
 }
 
@@ -299,7 +705,11 @@ function onMotion(e){
   S.gEst += 0.01 * (m - S.gEst);             // slow gravity estimate
   S.sig += 0.35 * ((m - S.gEst) - S.sig);    // smoothed bounce signal
   S.spark.push(S.sig); if (S.spark.length > 200) S.spark.shift();
-  if (S.recording) detect(performance.now());
+  if (S.recording){
+    if (S.sig > S.sMax) S.sMax = S.sig;
+    if (S.sig < S.sMin) S.sMin = S.sig;
+    detect(performance.now());
+  }
 }
 
 function detect(t){
@@ -323,89 +733,22 @@ function registerStep(t){
   };
   const g = pick(S.accG, S.liveG);
   const c = pick(S.accC, S.liveC);
-  S.accG = {s:0,c:0,n:0}; S.accC = {s:0,c:0,n:0};
-  S.steps.push({ t: Date.now() - S.walkStart, g: g == null ? 0 : +g.toFixed(4), c: c == null ? null : +c.toFixed(4) });
+  const amp = isFinite(S.sMax - S.sMin) ? S.sMax - S.sMin : 0;
+  S.accG = {s:0,c:0,n:0}; S.accC = {s:0,c:0,n:0}; S.sMax = -Infinity; S.sMin = Infinity;
+  S.steps.push({ t: Date.now() - S.walkStart, g: g == null ? 0 : +g.toFixed(4), c: c == null ? null : +c.toFixed(4), a: +amp.toFixed(2) });
   S.stepFlash = 1;
   recompute(); ui(); saveSoon();
 }
 
-/* ---------- path maths ---------- */
-function relHeadings(){
-  const st = S.steps; if (!st.length) return [];
-  const useC = S.source === 'compass';
-  const rg = S.refG != null ? S.refG : st[0].g;
-  const firstC = st.find(s => s.c != null);
-  const rc = S.refC != null ? S.refC : (firstC ? firstC.c : null);
-  return st.map(s => (useC && s.c != null && rc != null) ? wrap(s.c - rc) : wrap(s.g - rg));
-}
-function buildPath(hs){
-  let x = 0, y = 0; const pts = [[0,0]];
-  for (const h of hs){ x += Math.sin(h) * S.stride; y += Math.cos(h) * S.stride; pts.push([x,y]); }
-  return pts;
-}
-/* Straight view:
-   1. snap every step to the house's dominant wall directions (0/90/180/270°)
-   2. group steps into straight legs, and drop one-step wobbles at turns
-   3. when a leg runs alongside an earlier leg (within the merge distance), put it on the
-      same line, so walking back over your path reuses it instead of drawing a new one */
-function buildStraight(hs){
-  if (hs.length < 3) return buildPath(hs);
-  const sm = hs.map((_, i) => {
-    let s = 0, c = 0;
-    for (let k = -2; k <= 2; k++){ const j = i + k; if (j < 0 || j >= hs.length) continue; s += Math.sin(hs[j]); c += Math.cos(hs[j]); }
-    return Math.atan2(s, c);
-  });
-  let s4 = 0, c4 = 0; for (const h of sm){ s4 += Math.sin(4*h); c4 += Math.cos(4*h); }
-  const axis = Math.atan2(s4, c4) / 4;       // dominant wall direction
-  const Q = Math.PI / 2;
-  const qs = sm.map(h => (((Math.round(wrap(h - axis) / Q)) % 4) + 4) % 4);  // 0 fwd, 1 right, 2 back, 3 left
-
-  let legs = [];
-  for (const q of qs){ const l = legs[legs.length - 1]; if (l && l.q === q) l.n++; else legs.push({ q, n:1 }); }
-  for (let i = 1; i < legs.length - 1; i++){
-    const L = legs[i]; if (L.n !== 1) continue;
-    const a = legs[i-1].q, b = legs[i+1].q;
-    if (a === b) L.q = a;                    // wobble inside a straight walk
-    else if ((a + 2) % 4 === b) L.n = 0;     // sideways shuffle while turning around
-  }
-  const clean = [];
-  for (const L of legs){ if (!L.n) continue; const c = clean[clean.length - 1]; if (c && c.q === L.q) c.n += L.n; else clean.push({ ...L }); }
-
-  const tol = S.merge;
-  let x = 0, y = 0; const pts = [[0,0]]; const recs = [];
-  for (const L of clean){
-    const vert = L.q % 2 === 0, dir = (L.q === 0 || L.q === 1) ? 1 : -1, len = L.n * S.stride;
-    let lat = vert ? x : y; const a0 = vert ? y : x; let a1 = a0 + dir * len;
-    if (tol > 0){
-      let best = null, bd = tol;
-      const lo = Math.min(a0, a1), hi = Math.max(a0, a1);
-      for (const r of recs){
-        if (r.vert !== vert) continue;
-        const d = Math.abs(r.lat - lat); if (d >= bd) continue;
-        const rlo = Math.min(r.s, r.e), rhi = Math.max(r.s, r.e);
-        const ov = Math.min(hi, rhi) - Math.max(lo, rlo);
-        if (ov < Math.min(0.5, 0.3 * Math.min(len, rhi - rlo))) continue;
-        best = r; bd = d;
-      }
-      if (best){
-        lat = best.lat;
-        if (vert) x = lat; else y = lat;
-        pts[pts.length - 1] = [x, y];
-        const prev = recs[recs.length - 1]; if (prev && prev.vert !== vert) prev.e = lat;
-        // finish at a known corner on this line if you're close to one
-        for (const r of recs) if (r.vert === vert && r.lat === lat)
-          for (const v of [r.s, r.e]) if (Math.abs(v - a1) < tol * 0.6) a1 = v;
-      }
-    }
-    if (vert) y = a1; else x = a1;
-    pts.push([x, y]); recs.push({ vert, lat, s:a0, e:a1 });
-  }
-  const ca = Math.cos(axis), sa = Math.sin(axis);
-  return pts.map(([lx, ly]) => [lx * ca + ly * sa, -lx * sa + ly * ca]);
-}
+/* ---------- paths ---------- */
 function recompute(){
-  const hs = relHeadings();
-  S.cache = { hs, raw: buildPath(hs), straight: buildStraight(hs) };
+  S.cache = computePaths(S, S);
+  const ev = S.cache.events;
+  if (S.recording){
+    if (ev.uturns > S.seen.uturns) toast('U-turn: following your path back');
+    else if (ev.joins > S.seen.joins) toast('Back on a path you walked before');
+  }
+  S.seen = { uturns: Math.max(S.seen.uturns, ev.uturns), joins: Math.max(S.seen.joins, ev.joins) };
 }
 function liveRel(){
   const st = S.steps;
@@ -438,7 +781,7 @@ function shownPaths(){
   if (v === 'straight' || v === 'both') out.push({ pts:S.cache.straight, col:COL.straight, w:3, a:1, dots: false });
   return out;
 }
-function mainPts(){ return S.view === 'straight' ? S.cache.straight : S.cache.raw; }
+function mainPts(){ return S.view === 'raw' ? S.cache.raw : S.cache.straight; }
 
 function draw(){
   dpr = Math.min(window.devicePixelRatio || 1, 3);
@@ -452,7 +795,7 @@ function draw(){
   const MIN = 6;
   if (x1 - x0 < MIN){ const m = (x0 + x1) / 2; x0 = m - MIN/2; x1 = m + MIN/2; }
   if (y1 - y0 < MIN){ const m = (y0 + y1) / 2; y0 = m - MIN/2; y1 = m + MIN/2; }
-  const pl = 28, pr = 28, pt = 100, pb = 44;
+  const pl = 28, pr = 28, pt = 100, pb = 68;
   const tsc = Math.min((W - pl - pr) / (x1 - x0), (H - pt - pb) / (y1 - y0));
   const T = { cx:(x0 + x1)/2, cy:(y0 + y1)/2, sc:tsc };
   if (!V || !isFinite(V.sc)) V = { ...T };
@@ -498,7 +841,7 @@ function draw(){
   // current position + heading wedge
   const mp = mainPts(), last = mp[mp.length - 1];
   const cx = sx(last[0]), cy = sy(last[1]), h = liveRel();
-  const dotCol = S.view === 'straight' ? COL.straight : COL.raw;
+  const dotCol = S.view === 'raw' ? COL.raw : COL.straight;
   if (S.steps.length || S.recording){
     ctx.save(); ctx.translate(cx, cy); ctx.rotate(h);
     const g = ctx.createLinearGradient(0, 0, 0, -46);
@@ -516,13 +859,12 @@ function draw(){
 
   // scale bar
   const len = [0.5, 1, 2, 5, 10, 20, 50].find(l => l * V.sc >= 56) || 100;
-  const bx = 16, by = H - 18, bw = len * V.sc;
+  const bx = 16, by = H - 22, bw = len * V.sc;
   ctx.strokeStyle = COL.text; ctx.lineWidth = 2; ctx.lineCap = 'butt';
   ctx.beginPath(); ctx.moveTo(bx, by - 5); ctx.lineTo(bx, by); ctx.lineTo(bx + bw, by); ctx.lineTo(bx + bw, by - 5); ctx.stroke();
-  ctx.fillStyle = COL.text; ctx.font = '600 11px ui-monospace, Menlo, monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
-  ctx.fillText(len + ' m', bx + bw + 8, by + 4);
-  ctx.textAlign = 'right'; ctx.fillStyle = COL.muted;
-  ctx.fillText('grid ' + step + ' m', W - 16, by + 4);
+  ctx.font = '600 11px ui-monospace, Menlo, monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+  ctx.fillStyle = COL.text; ctx.fillText(len + ' m', bx + bw + 8, by + 4);
+  ctx.fillStyle = COL.muted; ctx.fillText('grid ' + step + ' m', bx, by + 18);
 
   drawSpark();
   if (S.recording) ui(true);
@@ -560,7 +902,7 @@ function ui(throttled){
   lastUi = now;
   const n = S.steps.length, mp = mainPts(), last = mp[mp.length - 1];
   $('vSteps').textContent = n;
-  $('vDist').textContent = (n * S.stride).toFixed(1);
+  $('vDist').textContent = S.cache.lens.reduce((a, l) => a + l, 0).toFixed(1);
   $('vHome').textContent = Math.hypot(last[0], last[1]).toFixed(1);
   const hd = ((Math.round(liveRel() / DEG) % 360) + 360) % 360;
   $('vHead').textContent = String(hd).padStart(3, '0');
@@ -571,11 +913,14 @@ function ui(throttled){
   b.textContent = S.recording ? 'Stop' : (n ? 'Resume' : 'Start');
   b.classList.toggle('rec', S.recording);
   $('empty').hidden = n > 0 || S.recording;
+  $('btnHome').hidden = n < 4;
   $('tilt').hidden = !(S.recording && (Math.abs(S.beta) > 55 || Math.abs(S.gamma) > 45)) || !$('banner').hidden;
   document.querySelectorAll('#viewSeg button').forEach(x => x.setAttribute('aria-pressed', x.dataset.v === S.view));
   document.querySelectorAll('#srcSeg button').forEach(x => x.setAttribute('aria-pressed', x.dataset.s === S.source));
+  document.querySelectorAll('#joinSeg button').forEach(x => x.setAttribute('aria-pressed', x.dataset.j === S.join));
+  $('adaptive').setAttribute('aria-checked', S.adaptive);
+  $('snap').setAttribute('aria-checked', S.snap);
   $('stride').value = S.stride; $('strideOut').textContent = S.stride.toFixed(2) + ' m';
-  $('merge').value = S.merge; $('mergeOut').textContent = S.merge ? S.merge.toFixed(1) + ' m' : 'Off';
   $('thr').value = S.thr; $('thrOut').textContent = S.thr.toFixed(1) + ' m/s²';
   $('sparkThr').textContent = 'threshold ' + S.thr.toFixed(1);
 }
@@ -603,11 +948,13 @@ document.addEventListener('visibilitychange', () => {
 });
 
 /* ---------- controls ---------- */
+function resetWalk(){
+  S.steps = []; S.trace = []; S.anchors = []; S.refG = null; S.refC = null;
+  S.elapsed = 0; S.lastTraceT = -1e9; S.seen = { uturns:0, joins:0 };
+}
 function start(){
-  if (!S.steps.length){
-    S.refG = S.liveG; S.refC = S.liveC; S.walkStart = Date.now(); S.elapsed = 0;
-  }
-  S.accG = {s:0,c:0,n:0}; S.accC = {s:0,c:0,n:0};
+  if (!S.steps.length){ resetWalk(); S.refG = S.liveG; S.refC = S.liveC; S.walkStart = Date.now(); }
+  S.accG = {s:0,c:0,n:0}; S.accC = {s:0,c:0,n:0}; S.sMax = -Infinity; S.sMin = Infinity;
   S.inPeak = false; S.lastStepT = performance.now();
   S.segStart = Date.now(); S.recording = true;
   keepAwake(true); ui();
@@ -623,6 +970,15 @@ $('btnStart').onclick = async () => {
   start();
 };
 
+$('btnHome').onclick = () => {
+  const i = S.steps.length;
+  if (!i) return;
+  if (S.anchors.some(a => a.i === i)){ toast('Already marked here'); return; }
+  S.anchors.push({ i });
+  recompute(); ui(); saveSoon();
+  toast(S.view === 'raw' ? 'Marked as the start. Switch to Corrected to see it.' : 'Marked as the start. Loop closed here.');
+};
+
 let clearArmed = null;
 $('btnClear').onclick = () => {
   const b = $('btnClear');
@@ -634,7 +990,7 @@ $('btnClear').onclick = () => {
   }
   clearTimeout(clearArmed); clearArmed = null; b.textContent = 'Clear'; b.classList.remove('armed');
   if (S.recording) stop();
-  S.steps = []; S.refG = null; S.refC = null; S.elapsed = 0;
+  resetWalk();
   recompute(); save(); ui(); V = null;
 };
 
@@ -644,17 +1000,21 @@ document.querySelectorAll('#srcSeg button').forEach(btn => btn.onclick = () => {
   if (S.source === 'compass' && S.steps.length && !S.steps.some(s => s.c != null)) toast('This walk has no compass readings, so it stays on gyro.');
   recompute(); ui();
 });
+document.querySelectorAll('#joinSeg button').forEach(btn => btn.onclick = () => { S.join = btn.dataset.j; store.set('join', S.join); recompute(); ui(); });
+for (const id of ['adaptive', 'snap']){
+  $(id).onclick = () => { S[id] = !S[id]; store.set(id, S[id]); recompute(); ui(); };
+}
 
 function setStride(v){ S.stride = Math.min(1, Math.max(0.4, Math.round(v * 100) / 100)); store.set('stride', S.stride); recompute(); ui(); }
 $('stride').oninput = e => setStride(+e.target.value);
 document.querySelectorAll('.stepper button').forEach(b => b.onclick = () => setStride(S.stride + +b.dataset.d));
-$('merge').oninput = e => { S.merge = +e.target.value; store.set('merge', S.merge); recompute(); ui(); };
 $('thr').oninput = e => { S.thr = +e.target.value; store.set('thr', S.thr); ui(); };
 $('calGo').onclick = () => {
   const d = parseFloat($('calDist').value), n = S.steps.length;
   if (!n){ toast('Walk the known distance first.'); return; }
   if (!(d > 0)){ toast('Enter the distance you walked, in metres.'); return; }
-  const s = d / n;
+  const units = S.cache.lens.reduce((a, l) => a + l, 0) / S.stride;   // steps, weighted by how firm each was
+  const s = d / units;
   if (s < 0.4 || s > 1){ toast('That gives ' + s.toFixed(2) + ' m per step. Check the step count.'); return; }
   setStride(s); toast('Stride set to ' + S.stride.toFixed(2) + ' m from ' + n + ' steps');
 };
@@ -666,19 +1026,25 @@ $('sheetBg').onclick = () => openSheet(false);
 
 /* ---------- persistence, export, import ---------- */
 function snapshot(){
-  return { app:'pathtrace', version:1, exported:new Date().toISOString(), stride:S.stride, threshold:S.thr, source:S.source,
-    refG:S.refG, refC:S.refC, elapsedMs:S.elapsed, steps:S.steps };
+  return { app:'pathtrace', version:2, exported:new Date().toISOString(), stride:S.stride, threshold:S.thr, source:S.source,
+    refG:S.refG, refC:S.refC, elapsedMs:S.elapsed, steps:S.steps, anchors:S.anchors, trace:S.trace };
 }
 function save(){ store.set('walk', snapshot()); }
 let saveT; function saveSoon(){ clearTimeout(saveT); saveT = setTimeout(save, 800); }
 function load(d){
   if (!d || !Array.isArray(d.steps)) throw new Error('not a Pathtrace walk file');
-  S.steps = d.steps.filter(s => s && typeof s.g === 'number').map(s => ({ t:s.t|0, g:s.g, c: typeof s.c === 'number' ? s.c : null }));
+  resetWalk();
+  S.steps = d.steps.filter(s => s && typeof s.g === 'number')
+    .map(s => ({ t:s.t|0, g:s.g, c: typeof s.c === 'number' ? s.c : null, a: typeof s.a === 'number' ? s.a : 0 }));
+  S.trace = Array.isArray(d.trace) ? d.trace.filter(p => Array.isArray(p) && p.length === 2) : [];
+  S.anchors = Array.isArray(d.anchors) ? d.anchors.filter(a => a && a.i > 0) : [];
   S.refG = typeof d.refG === 'number' ? d.refG : null;
   S.refC = typeof d.refC === 'number' ? d.refC : null;
   S.elapsed = d.elapsedMs || 0;
+  const lastT = S.steps.length ? S.steps[S.steps.length - 1].t : 0;
+  S.walkStart = Date.now() - lastT - 1000;   // a resumed walk carries on the same clock
   if (typeof d.stride === 'number') S.stride = Math.min(1, Math.max(.4, d.stride));
-  V = null; recompute(); ui();
+  V = null; recompute(); S.seen = { ...S.cache.events }; ui();
 }
 
 function dataURLtoBlob(u){
@@ -713,20 +1079,11 @@ $('importFile').onchange = e => {
 
 $('demoBtn').onclick = () => {
   if (S.recording) stop();
-  // L-shaped flat walked clockwise from the front door, with gyro drift and a magnetic bend near "the fridge"
-  const legs = [[0,14],[90,12],[180,6],[270,5],[180,8],[270,7],[0,9],[90,1],[180,9]];  // loop, then up the hall and back
-  const n3 = () => Math.random() + Math.random() + Math.random() - 1.5;
-  let drift = 0, t = 0; const steps = [];
-  for (const [deg, n] of legs){
-    for (let i = 0; i < n; i++){
-      drift += 0.25 * DEG; t += 540 + Math.random() * 90;
-      const truth = deg * DEG;
-      const bend = (deg === 90 && i > n * .3 && i < n * .7) ? 16 * DEG : 0;
-      steps.push({ t:Math.round(t), g:+wrap(truth + drift + n3() * 5 * DEG).toFixed(4), c:+wrap(truth + 0.6 + bend + n3() * 7 * DEG).toFixed(4) });
-    }
-  }
-  load({ steps, refG:0, refC:0.6, elapsedMs:Math.round(t), stride:S.stride });
-  save(); openSheet(false); toast('Demo: loop of an L-shaped flat, then down the hall and back');
+  const w = simulateWalk(BEDROOM, 1);
+  load({ steps: w.steps, trace: w.trace, refG: w.refG, refC: w.refC, elapsedMs: w.elapsedMs, stride: S.stride });
+  save(); openSheet(false);
+  S.view = 'both'; store.set('view', S.view); ui();
+  toast('Demo: a bedroom walk, raw and corrected');
 };
 
 /* ---------- boot ---------- */
