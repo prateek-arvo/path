@@ -399,6 +399,94 @@ function travelDir(pts, s, dir){
   const a = pts[s - 1], b = pts[s], x = b[0] - a[0], y = b[1] - a[1];
   return Math.hypot(x, y) < 1e-6 ? null : Math.atan2(dir * x, dir * y);
 }
+/* Where an earlier stretch (not one in `seen`) runs the way you're heading, h, within 0.4 m of J, with room
+   to go on along it. Stretches running your way count only after 7 steps. `room` asks for at least that much
+   old path ahead of you (through its next stretches while they keep to your heading); `ext` instead lets you
+   be up to that far past its end, carrying straight on along its line, on a straight stretch along the walls
+   (`axis`) only. */
+function crossingAt(pts, J, i, h, seen, room, ext, axis){
+  const ux = Math.sin(h), uy = Math.cos(h), COS = Math.cos(35 * DEG);
+  let best = null, bd = 0.4;
+  for (let s = 1; s <= i - 2; s++){
+    if (seen.has(s)) continue;
+    const a = pts[s - 1], b = pts[s];
+    if (Math.min(a[0], b[0]) - 0.5 > J[0] || Math.max(a[0], b[0]) + 0.5 < J[0] || Math.min(a[1], b[1]) - 0.5 > J[1] || Math.max(a[1], b[1]) + 0.5 < J[1]) continue;
+    const vx = b[0] - a[0], vy = b[1] - a[1], sl = Math.hypot(vx, vy);
+    if (sl < 0.2) continue;
+    const ca = (vx * ux + vy * uy) / sl;
+    if (Math.abs(ca) < COS || (ca > 0 && s > i - 7)) continue;
+    let t = ((J[0] - a[0]) * vx + (J[1] - a[1]) * vy) / (sl * sl);
+    const dir = ca > 0 ? 1 : -1;
+    let tq;
+    if (ext){
+      // You may carry on past the far end of a stretch walked your way (on along a corridor); not past the
+      // start of one walked against you, which only marks where that walk came round a corner into it.
+      if (dir > 0 ? t > 1 + ext / sl : t < 0.05) continue;
+      if (straightRun(pts, s, i) < 1.2) continue;     // a lone step (a cut corner) is not a path to turn onto
+      if (axis != null && Math.abs(wrap(4 * (Math.atan2(vx, vy) - axis))) / 4 > 15 * DEG) continue;   // nor is a diagonal
+      tq = dir > 0 ? Math.max(0, t) : Math.min(1, t);
+      if (dir < 0 && roomAhead(pts, s, tq, dir, ux, uy, COS, i, 0.5) < 0.5) continue;
+    } else {
+      if ((dir > 0 && t > 0.95) || (dir < 0 && t < 0.05)) continue;     // no room to go on along it
+      tq = Math.max(0, Math.min(1, t));
+      if (room && roomAhead(pts, s, tq, dir, ux, uy, COS, i, room) < room) continue;
+    }
+    const qx = a[0] + vx * tq, qy = a[1] + vy * tq, d = Math.hypot(J[0] - qx, J[1] - qy);
+    if (d < bd){ bd = d; best = { s, t: Math.max(0, Math.min(1, tq)), dir, q: [qx, qy] }; }
+  }
+  return best;
+}
+// Length of the straight stretch segment s is part of (its neighbours that keep its direction), up to 2 m
+function straightRun(pts, s, i){
+  const dirOf = k => Math.atan2(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]);
+  const len = k => Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]);
+  const h0 = dirOf(s); let r = len(s);
+  for (const step of [-1, 1]){
+    for (let k = s + step; r < 2 && k >= 1 && k <= i - 2; k += step){
+      const l = len(k);
+      if (l < 0.05) continue;
+      if (Math.abs(wrap(dirOf(k) - h0)) > 20 * DEG) break;
+      r += l;
+    }
+  }
+  return r;
+}
+// How far the old path goes on your way from (s, t), up to `need`
+function roomAhead(pts, s, t, dir, ux, uy, COS, i, need){
+  let sl = Math.hypot(pts[s][0] - pts[s - 1][0], pts[s][1] - pts[s - 1][1]), r = (dir > 0 ? 1 - t : t) * sl;
+  for (let k = s + dir; r < need && k >= 1 && k <= i - 2; k += dir){
+    const vx = pts[k][0] - pts[k - 1][0], vy = pts[k][1] - pts[k - 1][1];
+    sl = Math.hypot(vx, vy);
+    if (sl < 0.05) continue;                          // turned on the spot here: no distance, look on
+    if ((vx * ux + vy * uy) * dir / sl < COS) break;  // it turns off your way
+    r += sl;
+  }
+  return r;
+}
+
+/* Turning a step or two after a junction. Coming back along old paths, your step count runs over when the
+   way out was counted short (slow steps while turning into a room go uncounted), so you may already have
+   passed the junction you turned at, whether the old path ends there or carries on across it. Walk back
+   along your own last steps (not past `from`, where you got onto the old path) while you're at most `maxD`
+   past the spot along the old stretch's direction `td`, and return the first spot where an old path crosses
+   that runs the way you're now heading. */
+function junctionBehind(pts, i, h, from, maxD, td, axis){
+  const tx = Math.sin(td), ty = Math.cos(td), P = pts[i - 1], seen = new Set();
+  for (let s = Math.max(1, from + 1); s <= i - 1; s++) seen.add(s);
+  let k = i - 1, cur = P.slice(), walked = 0;
+  for (let g = 0; g < 400 && walked <= maxD + 1.5; g++){
+    const past = (P[0] - cur[0]) * tx + (P[1] - cur[1]) * ty;   // how far past this spot you went along the old stretch
+    if (past > maxD) return null;
+    const hit = crossingAt(pts, cur, i, h, seen, 0, 0.5, axis);
+    if (hit) return { ...hit, J: cur.slice(), dist: Math.max(0, past), corners: [], behind: true };
+    if (k <= from) return null;
+    const end = pts[k - 1], rx = end[0] - cur[0], ry = end[1] - cur[1], rl = Math.hypot(rx, ry);
+    if (rl < 0.1){ k--; continue; }
+    cur = [cur[0] + rx / rl * 0.1, cur[1] + ry / rl * 0.1]; walked += 0.1;
+  }
+  return null;
+}
+
 /* Junctions. You were following an earlier stretch and have just turned. Steps go uncounted during
    slow turns and pauses, so you may have reached the junction you turned at a little before (or after)
    the step count says. Walk along the stretch you were following, up to `ahead` metres forward and
@@ -406,27 +494,8 @@ function travelDir(pts, s, dir){
    now heading (within 0.4 m of it, with room to go on along it). The part of the stretch walked over
    in this search never counts as the junction: going back along it is turning round, not turning off. */
 function findJunction(pts, P, fol, h, i, ahead, behind){
-  const ux = Math.sin(h), uy = Math.cos(h), COS = Math.cos(35 * DEG);
-  const along = (J, seen) => {
-    let best = null, bd = 0.4;
-    for (let s = 1; s <= i - 2; s++){
-      if (seen.has(s)) continue;
-      const a = pts[s - 1], b = pts[s];
-      if (Math.min(a[0], b[0]) - 0.5 > J[0] || Math.max(a[0], b[0]) + 0.5 < J[0] || Math.min(a[1], b[1]) - 0.5 > J[1] || Math.max(a[1], b[1]) + 0.5 < J[1]) continue;
-      const vx = b[0] - a[0], vy = b[1] - a[1], sl = Math.hypot(vx, vy);
-      if (sl < 0.2) continue;
-      const ca = (vx * ux + vy * uy) / sl;
-      if (Math.abs(ca) < COS || (ca > 0 && s > i - 7)) continue;
-      let t = ((J[0] - a[0]) * vx + (J[1] - a[1]) * vy) / (sl * sl);
-      const dir = ca > 0 ? 1 : -1;
-      if ((dir > 0 && t > 0.95) || (dir < 0 && t < 0.05)) continue;     // no room to go on along it
-      t = Math.max(0, Math.min(1, t));
-      const d = Math.hypot(J[0] - a[0] - vx * t, J[1] - a[1] - vy * t);
-      if (d < bd){ bd = d; best = { s, t, dir, q: [a[0] + vx * t, a[1] + vy * t] }; }
-    }
-    return best;
-  };
   const walk = (sgn, maxD) => {                     // sample the followed stretch every 0.1 m in one direction
+    const room = sgn > 0 ? 0.5 : 0;                 // moved on to a path, it should lead somewhere your way
     if (maxD <= 0) return null;
     const dir = fol.dir * sgn, corners = [], seen = new Set();
     const ok = s => s >= 1 && s <= i - 2;
@@ -439,7 +508,7 @@ function findJunction(pts, P, fol, h, i, ahead, behind){
     }
     for (let g = 0; g < 200 && d <= maxD; g++){
       if (ok(s)) seen.add(s);
-      const hit = along(cur, seen);
+      const hit = crossingAt(pts, cur, i, h, seen, room);
       if (hit) return { ...hit, J: cur.slice(), dist: d, corners };
       if (!ok(s)) return null;
       const a = pts[s - 1], b = pts[s], end = dir > 0 ? b : a;
@@ -479,6 +548,7 @@ function snapStep(pts, p, prev, h, len, i, fol){
     const qx = a[0] + vx * t, qy = a[1] + vy * t, d = Math.hypot(p[0] - qx, p[1] - qy);
     const near = Math.abs(s - fol.s) <= 4;
     if (d > (near ? 1.4 : 0.8)) continue;
+    if ((t < 0 || t > 1) && d > 0.3) continue;                 // past its end you can carry on along it, not jump onto its line
     const score = d - (Math.abs(s - fol.s) <= 1 ? 0.15 : 0);   // stay on the same stretch when it's a tie
     if (score < bd){ bd = score; best = { s, t: Math.max(0, Math.min(1, t)), q: [qx, qy], dir: ca > 0 ? 1 : -1 }; }
   }
@@ -604,7 +674,7 @@ function buildCorrected(hs, w, lens, cfg){
     let fixed = false, inherit = null, jdbg = null;
     if (startAt.has(i - 1)){                      // turned around: walk back over the way you came
       const k = startAt.get(i - 1);
-      fol = { s: k + 1, dir: -1, run: 0 };        // run: how far you've come back along it so far
+      fol = { s: k + 1, dir: -1, run: 0, from: i - 1 };   // run: how far you've come back along old paths, since point `from`
       cand = null; events.uturns++;
     }
     if (fol){
@@ -616,34 +686,33 @@ function buildCorrected(hs, w, lens, cfg){
         if (td != null && Math.abs(wrap(h - td)) > 45 * DEG){
           const at = fol.lost ? pts[i - 1 - fol.lost] : prev;
           jn = findJunction(pts, at, fol, h, i, fol.lost ? 0 : 1.5, 1.0 - (fol.away || 0));
-          if (!jn && fol.lost && (fol.run || 0) >= 2.0){
-            /* You'd come back along an old stretch for a while, walked a step or two past where it ends, and
-               then turned onto an old path leading on from that end. Coming back the way you went, you turned
-               at that junction: the extra steps are a miscount (slow steps while turning into the stretch the
-               first time go uncounted, so it was drawn short). */
-            const e = fol.dir > 0 ? pts[fol.s] : pts[fol.s - 1], b = fol.dir > 0 ? pts[fol.s - 1] : pts[fol.s];
-            const ux = e[0] - b[0], uy = e[1] - b[1], ul = Math.hypot(ux, uy) || 1;
-            if (((at[0] - e[0]) * ux + (at[1] - e[1]) * uy) / ul > -0.4){
-              const alt = findJunction(pts, e, fol, h, i, 0.6, 0.3);
-              if (alt) jn = Object.assign(alt, { behind: true });   // you're past it either way
-            }
-          }
+          // (not when you've come right round: heading back the way you came is walking round something, and the
+          // path you'd find there is the very one you were coming back along)
+          if (!jn && (fol.run || 0) >= 2.0 && Math.abs(wrap(h - td)) <= 135 * DEG) jn = junctionBehind(pts, i, h, fol.from != null ? fol.from : i - 1, 2.0, td, cfg.snap ? axis : null);
         }
         if (jn){
           if (cfg.debug) jdbg = { d: +jn.dist.toFixed(2), behind: !!jn.behind, lost: fol.lost || 0, away: +(fol.away || 0).toFixed(2) };
-          if (jn.behind){                           // you'd gone past it: pull the overshoot back to it
-            const tx = Math.sin(td), ty = Math.cos(td), lim = jn.dist + (fol.away || 0) + 0.5;
-            for (let q = i - 1; q > Math.max(lastMark, i - 4 - (fol.lost || 0)); q--){
-              const ox = pts[q][0] - jn.q[0], oy = pts[q][1] - jn.q[1];
-              if (ox * tx + oy * ty > -0.05 && Math.hypot(ox, oy) <= lim) pts[q] = jn.q.slice(); else break;
-            }
-          }
           const a = pts[jn.s - 1], b = pts[jn.s], sl = Math.hypot(b[0] - a[0], b[1] - a[1]);
           const ex = (b[0] - a[0]) / sl * jn.dir, ey = (b[1] - a[1]) / sl * jn.dir;
-          p = [jn.q[0] + ex * len, jn.q[1] + ey * len];
+          let lead = 0;                             // how far along the new way you already were
+          const hNew = Math.atan2(ex, ey);
+          if (jn.behind){
+            // You'd gone past it. Steps that carried you on past it the old way come back to it; steps you'd
+            // already taken the new way (turning a step early) stay where they are, moved onto its line.
+            const tx = Math.sin(td), ty = Math.cos(td), lim = jn.dist + (fol.away || 0) + 1.0;
+            for (let q = i - 1; q > Math.max(lastMark, i - 5); q--){
+              const ox = pts[q][0] - jn.q[0], oy = pts[q][1] - jn.q[1], on = ox * ex + oy * ey;
+              if (Math.hypot(ox, oy) > lim) break;
+              if (on > 0.2 && Math.abs(wrap(H[q - 1] - hNew)) <= 30 * DEG){ pts[q] = [jn.q[0] + ex * on, jn.q[1] + ey * on]; if (q === i - 1) lead = on; }
+              else if (ox * tx + oy * ty > -0.05) pts[q] = jn.q.slice();
+              else break;
+            }
+          }
+          p = [jn.q[0] + ex * (lead + len), jn.q[1] + ey * (lead + len)];
           // draw the turn through the junction along the old path, not as a shortcut beside it
-          via[i] = jn.behind ? [jn.q] : [...jn.corners, jn.J, jn.q];
-          fol = { s: jn.s, dir: jn.dir, lost: 0, away: 0, run: len }; fixed = true;
+          if (!jn.behind) via[i] = [...jn.corners, jn.J, jn.q];
+          else if (!lead) via[i] = [jn.q];
+          fol = { s: jn.s, dir: jn.dir, lost: 0, away: 0, run: len, from: i }; fixed = true;
           inherit = [lerp(fx, jn.s, jn.t), lerp(fy, jn.s, jn.t)];
         }
         const sn = jn ? null : snapStep(pts, p, prev, h, len, i, fol);
@@ -651,14 +720,18 @@ function buildCorrected(hs, w, lens, cfg){
         else if (sn){
           if (fol.lost) spread(pts, H, L, i - 1 - fol.lost, i, p, sn.q);   // back on it after a step or two off
           const on = td == null || Math.abs(wrap(h - td)) <= 45 * DEG;   // still going the same way along it
-          p = sn.q; fol = { s: sn.s, dir: sn.dir, lost: 0, away: 0, run: (on ? fol.run || 0 : 0) + len }; fixed = true;
+          p = sn.q; fol = { s: sn.s, dir: sn.dir, lost: 0, away: 0, run: (on ? fol.run || 0 : 0) + len, from: on && fol.from != null ? fol.from : i - 1 }; fixed = true;
           // the old stretch fixes how far to the side you are, not how far along it: that is still counted
           // from your steps, so the along-the-stretch uncertainty keeps growing
           const sx = Math.abs(Math.sin(h - axis)) >= Math.SQRT1_2;
           inherit = [sx ? fx[i - 1] + len * Math.abs(Math.sin(h - axis)) : lerp(fx, sn.s, sn.t),
                      sx ? lerp(fy, sn.s, sn.t) : fy[i - 1] + len * Math.abs(Math.cos(h - axis))];
         }
-        else if ((fol.lost || 0) < 2){ fol.lost = (fol.lost || 0) + 1; fol.away = (fol.away || 0) + len; }  // off it: remember it for two more steps
+        // off it: remember it for two more steps, or three if you're partway through turning (a turn spread over
+        // a couple of steps, so the junction check above can still run once you've come round)
+        else if ((fol.lost || 0) < 2 || ((fol.lost || 0) < 3 && td != null && Math.abs(wrap(h - td)) >= 20 * DEG)){
+          fol.lost = (fol.lost || 0) + 1; fol.away = (fol.away || 0) + len;
+        }
         else fol = null;                          // you've left the old path: carry on from here
       }
     } else if (len > 0 && strength > 0){
@@ -672,7 +745,7 @@ function buildCorrected(hs, w, lens, cfg){
         if (cand.n >= 3 || (cand.n >= 2 && cand.ev >= 1.4)){   // you're back on an old path
           spread(pts, H, L, Math.max(anchor, m.j), i, p, m.q);
           p = m.q.slice();
-          fol = { s: m.j, dir: m.par, run: len };
+          fol = { s: m.j, dir: m.par, run: len, from: i };
           inherit = [lerp(fx, m.j, m.t), lerp(fy, m.j, m.t)];
           fixed = true; cand = null; events.joins++; debt = [0, 0];
         }
@@ -683,7 +756,7 @@ function buildCorrected(hs, w, lens, cfg){
       spread(pts, H, L, anchor, i, p, [0, 0]);
       p = [0, 0]; fol = null; cand = null; fixed = true; inherit = [0, 0]; debt = [0, 0]; lastMark = i;
     }
-    if (cfg.debug) cfg.debug.push({ i, h: Math.round(h / DEG), len: +len.toFixed(2), mode: fol ? 'on:' + fol.s + (fol.dir > 0 ? '+' : '-') : 'free', cand: cand ? cand.n : 0, p: p.map(v => +v.toFixed(2)), jn: jdbg });
+    if (cfg.debug) cfg.debug.push({ i, h: Math.round(h / DEG), len: +len.toFixed(2), mode: fol ? 'on:' + fol.s + (fol.dir > 0 ? '+' : '-') + (fol.lost ? 'L' + fol.lost : '') + ' r' + (fol.run || 0).toFixed(1) + ' f' + fol.from : 'free', cand: cand ? cand.n : 0, p: p.map(v => +v.toFixed(2)), jn: jdbg });
     pts.push(p);
     cum.push(cum[i - 1] + len);
     if (inherit){ fx.push(inherit[0]); fy.push(inherit[1]); }
