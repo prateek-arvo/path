@@ -1,0 +1,675 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Pathtrace">
+<meta name="theme-color" content="#0b1a2b">
+<title>Pathtrace</title>
+<style>
+/* Layout: full-height phone tool. Header, map canvas filling the middle, control deck at the bottom.
+   Blueprint palette: ink-blue ground, faint survey grid, signal-yellow raw trace, cyan straightened trace. */
+:root{
+  --ink:#0b1a2b;
+  --panel:#10243a;
+  --panel-2:#17314d;
+  --line:#22415f;
+  --text:#e6eef7;
+  --muted:#8ba4be;
+  --raw:#f2c14e;
+  --straight:#5fd0e6;
+  --rec:#ff6b5a;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Segoe UI", sans-serif;
+  color-scheme: dark;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0;background:var(--ink);color:var(--text);font-family:var(--sans);font-size:15px;overscroll-behavior:none}
+body{display:flex;flex-direction:column;touch-action:manipulation;-webkit-user-select:none;user-select:none;overflow:hidden}
+[hidden]{display:none!important}
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible,input:focus-visible,label.file:focus-within{outline:2px solid var(--straight);outline-offset:2px}
+
+header{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding-top:calc(env(safe-area-inset-top,0px) + 10px);padding-bottom:10px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  border-bottom:1px solid var(--line);background:var(--ink);
+}
+.brand{display:flex;align-items:baseline;gap:8px;min-width:0}
+.brand b{font-size:17px;font-weight:700;letter-spacing:.01em}
+.brand span{font:500 10px var(--mono);color:var(--muted);letter-spacing:.1em;text-transform:uppercase;white-space:nowrap}
+.hdr-right{display:flex;align-items:center;gap:10px}
+.status{display:flex;align-items:center;gap:7px;font:600 12px var(--mono);font-variant-numeric:tabular-nums;color:var(--muted);
+  padding:6px 10px;border:1px solid var(--line);border-radius:999px;white-space:nowrap}
+.status i{width:7px;height:7px;border-radius:50%;background:var(--muted)}
+.status.rec{color:var(--rec);border-color:rgba(255,107,90,.45)}
+.status.rec i{background:var(--rec);animation:pulse 1.2s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.25}}
+.icon-btn{width:38px;height:38px;display:grid;place-items:center;border-radius:10px;border:1px solid var(--line);background:var(--panel)}
+.icon-btn svg{width:20px;height:20px;stroke:var(--text)}
+
+main{flex:1;position:relative;min-height:0;overflow:hidden}
+#map{position:absolute;inset:0;width:100%;height:100%;display:block}
+.stats{position:absolute;top:12px;left:max(16px,env(safe-area-inset-left,0px));right:max(16px,env(safe-area-inset-right,0px));
+  display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);
+  border-radius:10px;overflow:hidden;pointer-events:none}
+.stat{background:rgba(16,36,58,.9);padding:7px 10px 8px;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);min-width:0}
+.stat .k{font:600 9.5px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted);white-space:nowrap}
+.stat .v{font:600 18px var(--mono);font-variant-numeric:tabular-nums;margin-top:3px;white-space:nowrap}
+.stat .v small{font-size:11px;color:var(--muted);margin-left:2px;font-weight:500}
+.chip{position:absolute;top:86px;left:50%;transform:translateX(-50%);font:600 12px var(--sans);color:#1d1503;background:var(--raw);
+  padding:6px 12px;border-radius:999px;white-space:nowrap}
+.empty{position:absolute;left:50%;top:52%;transform:translate(-50%,-50%);width:min(320px,calc(100% - 32px));text-align:center;pointer-events:none}
+.empty h1{font-size:20px;margin:0 0 8px;text-wrap:balance}
+.empty p{margin:0;color:var(--muted);line-height:1.45;text-wrap:balance}
+.banner{position:absolute;left:max(16px,env(safe-area-inset-left,0px));right:max(16px,env(safe-area-inset-right,0px));top:86px;
+  display:flex;gap:10px;align-items:flex-start;background:#3a1714;border:1px solid rgba(255,107,90,.5);color:#ffd9d3;
+  border-radius:10px;padding:10px 12px;line-height:1.4;font-size:14px;z-index:2}
+.banner span{flex:1;min-width:0}
+.banner button{background:none;border:0;font-size:20px;line-height:1;padding:0 2px;color:#ffd9d3}
+.toast{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);background:var(--panel-2);border:1px solid var(--line);
+  padding:9px 14px;border-radius:10px;font-size:13.5px;white-space:nowrap;max-width:calc(100% - 32px);overflow:hidden;text-overflow:ellipsis;z-index:2}
+
+footer{display:flex;flex-direction:column;gap:10px;background:var(--panel);border-top:1px solid var(--line);
+  padding-top:10px;padding-bottom:calc(env(safe-area-inset-bottom,0px) + 12px);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.spark{position:relative;height:38px;border-radius:8px;background:var(--ink);border:1px solid var(--line);overflow:hidden}
+.spark canvas{width:100%;height:100%;display:block}
+.spark-label,.spark-thr{position:absolute;top:4px;font:600 9px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.spark-label{left:8px}.spark-thr{right:8px}
+.seg{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:3px;background:var(--ink);border:1px solid var(--line);border-radius:10px;padding:3px}
+.seg.two{grid-template-columns:repeat(2,minmax(0,1fr))}
+.seg button{display:flex;align-items:center;justify-content:center;gap:7px;height:34px;border:0;border-radius:7px;background:none;color:var(--muted);font-weight:600;font-size:14px}
+.seg button[aria-pressed="true"]{background:var(--panel-2);color:var(--text)}
+.sw{width:14px;height:3px;border-radius:2px;display:inline-block}
+.sw.raw{background:var(--raw)}.sw.straight{background:var(--straight)}
+.controls{display:grid;grid-template-columns:1fr 1.5fr 1fr;gap:10px}
+.btn{height:52px;border-radius:12px;border:1px solid var(--line);background:var(--panel-2);font-weight:600;font-size:15px;color:var(--text)}
+.btn:active{transform:scale(.98)}
+.btn.primary{background:var(--raw);border-color:transparent;color:#1d1503;font-size:17px}
+.btn.primary.rec{background:var(--rec);color:#fff}
+.btn.armed{border-color:var(--rec);color:var(--rec)}
+.btn.small{height:40px;padding:0 14px;font-size:14px;border-radius:10px}
+
+.sheet-bg{position:fixed;inset:0;background:rgba(3,9,16,.6);z-index:10}
+.sheet{position:fixed;left:0;right:0;bottom:0;max-height:86%;overflow-y:auto;z-index:11;background:var(--panel);
+  border-top:1px solid var(--line);border-radius:18px 18px 0 0;-webkit-user-select:text;user-select:text;
+  padding-top:6px;padding-bottom:calc(env(safe-area-inset-bottom,0px) + 20px);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.sheet-head{display:flex;align-items:center;justify-content:space-between;position:sticky;top:-6px;background:var(--panel);padding:10px 0;z-index:1}
+.sheet-head h2{margin:0;font-size:18px}
+.field{padding:14px 0;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:8px}
+.field > label,.field .row label{font-weight:600}
+.row{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+output{font:600 15px var(--mono);font-variant-numeric:tabular-nums;color:var(--raw)}
+.hint{margin:0;color:var(--muted);font-size:13px;line-height:1.45;max-width:62ch}
+.stepper{display:grid;grid-template-columns:40px 1fr 40px;gap:10px;align-items:center}
+.stepper button{height:40px;border-radius:10px;border:1px solid var(--line);background:var(--panel-2);font-size:20px}
+input[type=range]{width:100%;accent-color:var(--raw)}
+.inline{display:flex;gap:10px;flex-wrap:wrap}
+.inline input[type=number]{flex:1;min-width:0;height:40px;border-radius:10px;border:1px solid var(--line);background:var(--ink);color:var(--text);padding:0 12px;font:500 16px var(--mono)}
+label.file{position:relative;display:inline-flex;align-items:center;overflow:hidden}
+label.file input{position:absolute;inset:0;opacity:0}
+.tips ul{margin:0;padding-left:18px;color:var(--muted);font-size:13.5px;line-height:1.5;display:grid;gap:4px}
+@media (prefers-reduced-motion:reduce){.status.rec i{animation:none}.btn:active{transform:none}}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><b>Pathtrace</b><span>step tracer</span></div>
+  <div class="hdr-right">
+    <div id="status" class="status"><i></i><span id="statusText">Idle</span></div>
+    <button id="btnSettings" class="icon-btn" aria-label="Settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
+    </button>
+  </div>
+</header>
+
+<main id="stage">
+  <canvas id="map"></canvas>
+  <div class="stats" aria-live="polite">
+    <div class="stat"><div class="k">Steps</div><div class="v" id="vSteps">0</div></div>
+    <div class="stat"><div class="k">Distance</div><div class="v"><span id="vDist">0.0</span><small>m</small></div></div>
+    <div class="stat"><div class="k">To start</div><div class="v"><span id="vHome">0.0</span><small>m</small></div></div>
+    <div class="stat"><div class="k">Heading</div><div class="v"><span id="vHead">000</span><small>°</small></div></div>
+  </div>
+  <div id="tilt" class="chip" hidden>Hold the phone flatter</div>
+  <div id="empty" class="empty">
+    <h1>Tap Start, then walk</h1>
+    <p>Hold the phone flat in front of you, screen up. Begin facing along a wall so the grid lines up with your rooms.</p>
+  </div>
+  <div id="banner" class="banner" hidden><span id="bannerText"></span><button id="bannerClose" aria-label="Dismiss">×</button></div>
+  <div id="toast" class="toast" hidden></div>
+</main>
+
+<footer>
+  <div class="spark"><canvas id="spark"></canvas><span class="spark-label">Step signal</span><span class="spark-thr" id="sparkThr">threshold 1.2</span></div>
+  <div class="seg" id="viewSeg" role="group" aria-label="Trace view">
+    <button data-v="raw"><i class="sw raw"></i>Raw</button>
+    <button data-v="straight"><i class="sw straight"></i>Straight</button>
+    <button data-v="both">Both</button>
+  </div>
+  <div class="controls">
+    <button id="btnClear" class="btn">Clear</button>
+    <button id="btnStart" class="btn primary">Start</button>
+    <button id="btnExport" class="btn">Export</button>
+  </div>
+</footer>
+
+<div id="sheetBg" class="sheet-bg" hidden></div>
+<section id="sheet" class="sheet" hidden aria-label="Settings">
+  <div class="sheet-head"><h2>Settings</h2><button id="sheetClose" class="btn small">Done</button></div>
+
+  <div class="field">
+    <div class="row"><label for="stride">Stride length</label><output id="strideOut">0.70 m</output></div>
+    <div class="stepper"><button data-d="-0.01" aria-label="Shorter">−</button><input type="range" id="stride" min="0.40" max="1.00" step="0.01"><button data-d="0.01" aria-label="Longer">+</button></div>
+    <p class="hint">Changing it rescales the whole trace, including a walk you already recorded.</p>
+  </div>
+
+  <div class="field">
+    <label for="calDist">Calibrate from a known distance</label>
+    <div class="inline"><input id="calDist" type="number" inputmode="decimal" placeholder="metres walked" step="0.1" min="0"><button id="calGo" class="btn small">Set stride</button></div>
+    <p class="hint">Clear, walk a straight line you know the length of (a hallway, or 5 m of tape), stop, then enter the distance. Stride becomes distance ÷ steps.</p>
+  </div>
+
+  <div class="field">
+    <div class="row"><label for="thr">Step threshold</label><output id="thrOut">1.2 m/s²</output></div>
+    <input type="range" id="thr" min="0.5" max="3" step="0.1">
+    <p class="hint">Watch the step signal strip while walking. Each footstep should cross the dashed line once. Lower it if steps are missed, raise it if one step counts twice.</p>
+  </div>
+
+  <div class="field">
+    <label>Heading source</label>
+    <div class="seg two" id="srcSeg" role="group" aria-label="Heading source"><button data-s="gyro">Gyro</button><button data-s="compass">Compass</button></div>
+    <p class="hint">Both are recorded on every step, so you can switch after a walk and compare. Gyro ignores magnetic interference but slowly drifts. Compass doesn't drift but bends near fridges, steel and wiring.</p>
+  </div>
+
+  <div class="field">
+    <label>Walk data</label>
+    <div class="inline">
+      <label class="btn small file">Open walk file<input id="importFile" type="file" accept="application/json,.json"></label>
+      <button id="demoBtn" class="btn small">Load demo walk</button>
+    </div>
+    <p class="hint">Export saves a picture and a .json of the walk. Open a .json here to look at it again, on any device.</p>
+  </div>
+
+  <div class="field tips">
+    <label>For a good trace</label>
+    <ul>
+      <li>Hold the phone flat in front of you, screen up, like reading a map.</li>
+      <li>Walk at a normal, steady pace. Shuffling and very slow steps get missed.</li>
+      <li>Keep the screen on. iPhone stops sending motion data when it locks or you switch apps.</li>
+      <li>Finish where you started to see how far the trace drifted (the To start reading).</li>
+    </ul>
+  </div>
+</section>
+
+<script>
+(() => {
+'use strict';
+const DEG = Math.PI / 180;
+const TAU = Math.PI * 2;
+const wrap = a => { a = (a + Math.PI) % TAU; if (a < 0) a += TAU; return a - Math.PI; };
+const $ = id => document.getElementById(id);
+const store = {
+  get(k, d){ try { const v = localStorage.getItem('pathtrace.' + k); return v == null ? d : JSON.parse(v); } catch(e){ return d; } },
+  set(k, v){ try { localStorage.setItem('pathtrace.' + k, JSON.stringify(v)); } catch(e){} }
+};
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const COL = { ink: css('--ink'), line: css('--line'), raw: css('--raw'), straight: css('--straight'), rec: css('--rec'), muted: css('--muted'), text: css('--text') };
+
+/* ---------- state ---------- */
+const S = {
+  permitted:false, sensorsSeen:false, recording:false,
+  steps:[],            // {t: ms since walk start, g: gyro heading (rad, clockwise), c: compass heading or null}
+  refG:null, refC:null,
+  walkStart:0, elapsed:0, segStart:0,
+  stride: store.get('stride', 0.70),
+  thr: store.get('thr', 1.2),
+  source: store.get('source', 'gyro'),
+  view: store.get('view', 'raw'),
+  liveG:null, liveC:null, beta:0, gamma:0,
+  accG:{s:0,c:0,n:0}, accC:{s:0,c:0,n:0},
+  gEst:9.81, sig:0, inPeak:false, peakT:0, peakV:0, lastStepT:0,
+  spark:[], stepFlash:0,
+  cache:{ hs:[], raw:[[0,0]], straight:[[0,0]] }
+};
+
+/* ---------- sensors ---------- */
+async function ensureSensors(){
+  if (S.permitted) return true;
+  if (!window.isSecureContext){
+    banner('Open this page over https://. iPhone only shares motion sensors with secure pages.');
+    return false;
+  }
+  try {
+    const reqs = [];
+    if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') reqs.push(DeviceMotionEvent.requestPermission());
+    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') reqs.push(DeviceOrientationEvent.requestPermission());
+    const res = await Promise.all(reqs);
+    if (res.some(r => r !== 'granted')){
+      banner('Motion access was denied. Close this tab, open the page again and tap Allow. If Safari stops asking, clear this site in Settings › Apps › Safari › Advanced › Website Data.');
+      return false;
+    }
+  } catch(e){
+    banner('Motion access needs a tap on Start to be asked. Try again. (' + e.message + ')');
+    return false;
+  }
+  window.addEventListener('devicemotion', onMotion);
+  window.addEventListener('deviceorientation', onOrient);
+  S.permitted = true;
+  setTimeout(() => {
+    if (!S.sensorsSeen) banner('No motion data is arriving. This needs a phone. On a laptop, open Settings and load the demo walk.');
+  }, 1800);
+  return true;
+}
+
+function acc(a, h){ a.s += Math.sin(h); a.c += Math.cos(h); a.n++; }
+
+function onOrient(e){
+  if (e.alpha == null) return;
+  S.sensorsSeen = true;
+  S.liveG = wrap(-e.alpha * DEG);            // alpha grows counter-clockwise; flip to clockwise
+  if (typeof e.webkitCompassHeading === 'number' && e.webkitCompassHeading >= 0) S.liveC = wrap(e.webkitCompassHeading * DEG);
+  S.beta = e.beta || 0; S.gamma = e.gamma || 0;
+  if (S.recording){
+    if (S.refG == null) S.refG = S.liveG;
+    if (S.refC == null && S.liveC != null) S.refC = S.liveC;
+    acc(S.accG, S.liveG);
+    if (S.liveC != null) acc(S.accC, S.liveC);
+  }
+}
+
+function onMotion(e){
+  const a = e.accelerationIncludingGravity;
+  if (!a || a.x == null) return;
+  S.sensorsSeen = true;
+  const m = Math.hypot(a.x, a.y, a.z);
+  S.gEst += 0.01 * (m - S.gEst);             // slow gravity estimate
+  S.sig += 0.35 * ((m - S.gEst) - S.sig);    // smoothed bounce signal
+  S.spark.push(S.sig); if (S.spark.length > 200) S.spark.shift();
+  if (S.recording) detect(performance.now());
+}
+
+function detect(t){
+  const v = S.sig;
+  if (!S.inPeak){
+    if (v > S.thr && t - S.lastStepT > 280){ S.inPeak = true; S.peakV = v; S.peakT = t; }
+  } else {
+    if (v > S.peakV){ S.peakV = v; S.peakT = t; }
+    if (v < S.thr * 0.35 || t - S.peakT > 400){ S.inPeak = false; registerStep(S.peakT); }
+  }
+}
+
+function registerStep(t){
+  S.lastStepT = t;
+  const g = S.accG.n ? Math.atan2(S.accG.s, S.accG.c) : S.liveG;
+  const c = S.accC.n ? Math.atan2(S.accC.s, S.accC.c) : S.liveC;
+  S.accG = {s:0,c:0,n:0}; S.accC = {s:0,c:0,n:0};
+  S.steps.push({ t: Date.now() - S.walkStart, g: g == null ? 0 : +g.toFixed(4), c: c == null ? null : +c.toFixed(4) });
+  S.stepFlash = 1;
+  recompute(); ui(); saveSoon();
+}
+
+/* ---------- path maths ---------- */
+function relHeadings(){
+  const st = S.steps; if (!st.length) return [];
+  const useC = S.source === 'compass';
+  const rg = S.refG != null ? S.refG : st[0].g;
+  const firstC = st.find(s => s.c != null);
+  const rc = S.refC != null ? S.refC : (firstC ? firstC.c : null);
+  return st.map(s => (useC && s.c != null && rc != null) ? wrap(s.c - rc) : wrap(s.g - rg));
+}
+function buildPath(hs){
+  let x = 0, y = 0; const pts = [[0,0]];
+  for (const h of hs){ x += Math.sin(h) * S.stride; y += Math.cos(h) * S.stride; pts.push([x,y]); }
+  return pts;
+}
+function straighten(hs){
+  if (hs.length < 3) return hs.slice();
+  const sm = hs.map((_, i) => {
+    let s = 0, c = 0;
+    for (let k = -2; k <= 2; k++){ const j = i + k; if (j < 0 || j >= hs.length) continue; s += Math.sin(hs[j]); c += Math.cos(hs[j]); }
+    return Math.atan2(s, c);
+  });
+  let s4 = 0, c4 = 0; for (const h of sm){ s4 += Math.sin(4*h); c4 += Math.cos(4*h); }
+  const axis = Math.atan2(s4, c4) / 4;       // dominant wall direction
+  const Q = Math.PI / 2;
+  return sm.map(h => axis + Math.round(wrap(h - axis) / Q) * Q);
+}
+function recompute(){
+  const hs = relHeadings();
+  S.cache = { hs, raw: buildPath(hs), straight: buildPath(straighten(hs)) };
+}
+function liveRel(){
+  const st = S.steps;
+  if (S.source === 'compass' && S.liveC != null){
+    const rc = S.refC != null ? S.refC : (st.find(s => s.c != null) || {}).c;
+    if (rc != null) return wrap(S.liveC - rc);
+  }
+  if (S.liveG != null){
+    const rg = S.refG != null ? S.refG : (st[0] ? st[0].g : null);
+    if (rg != null) return wrap(S.liveG - rg);
+  }
+  const hs = S.cache.hs; return hs.length ? hs[hs.length - 1] : 0;
+}
+
+/* ---------- drawing ---------- */
+const cv = $('map'), ctx = cv.getContext('2d');
+const sp = $('spark'), sctx = sp.getContext('2d');
+let dpr = 1, V = null;
+
+function sizeCanvas(c){
+  const r = c.getBoundingClientRect();
+  const w = Math.round(r.width * dpr), h = Math.round(r.height * dpr);
+  if (c.width !== w || c.height !== h){ c.width = w; c.height = h; }
+  return r;
+}
+
+function shownPaths(){
+  const v = S.view, out = [];
+  if (v === 'raw' || v === 'both') out.push({ pts:S.cache.raw, col:COL.raw, w: v === 'both' ? 2 : 3, a: v === 'both' ? .7 : 1, dots: v === 'raw' });
+  if (v === 'straight' || v === 'both') out.push({ pts:S.cache.straight, col:COL.straight, w:3, a:1, dots: v === 'straight' });
+  return out;
+}
+function mainPts(){ return S.view === 'straight' ? S.cache.straight : S.cache.raw; }
+
+function draw(){
+  dpr = Math.min(window.devicePixelRatio || 1, 3);
+  const r = sizeCanvas(cv), W = r.width, H = r.height;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.fillStyle = COL.ink; ctx.fillRect(0,0,W,H);
+
+  const paths = shownPaths();
+  let x0 = 0, x1 = 0, y0 = 0, y1 = 0;
+  for (const p of paths) for (const [x,y] of p.pts){ if (x<x0)x0=x; if (x>x1)x1=x; if (y<y0)y0=y; if (y>y1)y1=y; }
+  const MIN = 6;
+  if (x1 - x0 < MIN){ const m = (x0 + x1) / 2; x0 = m - MIN/2; x1 = m + MIN/2; }
+  if (y1 - y0 < MIN){ const m = (y0 + y1) / 2; y0 = m - MIN/2; y1 = m + MIN/2; }
+  const pl = 28, pr = 28, pt = 100, pb = 44;
+  const tsc = Math.min((W - pl - pr) / (x1 - x0), (H - pt - pb) / (y1 - y0));
+  const T = { cx:(x0 + x1)/2, cy:(y0 + y1)/2, sc:tsc };
+  if (!V || !isFinite(V.sc)) V = { ...T };
+  else { const k = 0.12; V.cx += (T.cx - V.cx)*k; V.cy += (T.cy - V.cy)*k; V.sc += (T.sc - V.sc)*k; }
+  const ox = (pl + W - pr) / 2, oy = (pt + H - pb) / 2;
+  const sx = x => ox + (x - V.cx) * V.sc;
+  const sy = y => oy - (y - V.cy) * V.sc;
+
+  // grid
+  const step = [0.25, 0.5, 1, 2, 5, 10, 20].find(s => s * V.sc >= 24) || 50;
+  const wx0 = V.cx - ox / V.sc, wx1 = V.cx + (W - ox) / V.sc;
+  const wy0 = V.cy - (H - oy) / V.sc, wy1 = V.cy + oy / V.sc;
+  ctx.lineWidth = 1;
+  for (let k = Math.ceil(wx0/step); k <= Math.floor(wx1/step); k++){
+    ctx.strokeStyle = k % 5 === 0 ? 'rgba(126,170,214,.20)' : 'rgba(126,170,214,.08)';
+    const X = Math.round(sx(k*step)) + .5; ctx.beginPath(); ctx.moveTo(X,0); ctx.lineTo(X,H); ctx.stroke();
+  }
+  for (let k = Math.ceil(wy0/step); k <= Math.floor(wy1/step); k++){
+    ctx.strokeStyle = k % 5 === 0 ? 'rgba(126,170,214,.20)' : 'rgba(126,170,214,.08)';
+    const Y = Math.round(sy(k*step)) + .5; ctx.beginPath(); ctx.moveTo(0,Y); ctx.lineTo(W,Y); ctx.stroke();
+  }
+
+  // paths
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  for (const p of paths){
+    if (p.pts.length < 2) continue;
+    ctx.globalAlpha = p.a; ctx.strokeStyle = p.col; ctx.lineWidth = p.w;
+    ctx.beginPath(); p.pts.forEach(([x,y], i) => i ? ctx.lineTo(sx(x), sy(y)) : ctx.moveTo(sx(x), sy(y))); ctx.stroke();
+    if (p.dots && S.stride * V.sc > 14){
+      ctx.fillStyle = p.col;
+      for (let i = 1; i < p.pts.length - 1; i++){ ctx.beginPath(); ctx.arc(sx(p.pts[i][0]), sy(p.pts[i][1]), 1.8, 0, TAU); ctx.fill(); }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // start marker
+  const X0 = sx(0), Y0 = sy(0);
+  ctx.strokeStyle = COL.text; ctx.lineWidth = 2; ctx.fillStyle = COL.ink;
+  ctx.beginPath(); ctx.arc(X0, Y0, 8, 0, TAU); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = COL.text; ctx.font = '700 9px ui-monospace, Menlo, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('S', X0, Y0 + .5);
+
+  // current position + heading wedge
+  const mp = mainPts(), last = mp[mp.length - 1];
+  const cx = sx(last[0]), cy = sy(last[1]), h = liveRel();
+  const dotCol = S.view === 'straight' ? COL.straight : COL.raw;
+  if (S.steps.length || S.recording){
+    ctx.save(); ctx.translate(cx, cy); ctx.rotate(h);
+    const g = ctx.createLinearGradient(0, 0, 0, -46);
+    g.addColorStop(0, 'rgba(230,238,247,.35)'); g.addColorStop(1, 'rgba(230,238,247,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(0,0); ctx.arc(0, 0, 46, -Math.PI/2 - .38, -Math.PI/2 + .38); ctx.closePath(); ctx.fill();
+    ctx.restore();
+    if (S.recording){
+      const pulse = (performance.now() % 1400) / 1400;
+      ctx.strokeStyle = dotCol; ctx.globalAlpha = 1 - pulse; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(cx, cy, 7 + pulse * 14, 0, TAU); ctx.stroke(); ctx.globalAlpha = 1;
+    }
+    ctx.fillStyle = dotCol; ctx.strokeStyle = COL.ink; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.arc(cx, cy, 7, 0, TAU); ctx.fill(); ctx.stroke();
+  }
+
+  // scale bar
+  const len = [0.5, 1, 2, 5, 10, 20, 50].find(l => l * V.sc >= 56) || 100;
+  const bx = 16, by = H - 18, bw = len * V.sc;
+  ctx.strokeStyle = COL.text; ctx.lineWidth = 2; ctx.lineCap = 'butt';
+  ctx.beginPath(); ctx.moveTo(bx, by - 5); ctx.lineTo(bx, by); ctx.lineTo(bx + bw, by); ctx.lineTo(bx + bw, by - 5); ctx.stroke();
+  ctx.fillStyle = COL.text; ctx.font = '600 11px ui-monospace, Menlo, monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+  ctx.fillText(len + ' m', bx + bw + 8, by + 4);
+  ctx.textAlign = 'right'; ctx.fillStyle = COL.muted;
+  ctx.fillText('grid ' + step + ' m', W - 16, by + 4);
+
+  drawSpark();
+  if (S.recording) ui(true);
+  requestAnimationFrame(draw);
+}
+
+function drawSpark(){
+  const r = sizeCanvas(sp), W = r.width, H = r.height;
+  sctx.setTransform(dpr,0,0,dpr,0,0);
+  sctx.clearRect(0,0,W,H);
+  const top = Math.max(3, S.thr * 1.8), bot = -top * 0.45;
+  const y = v => 4 + (top - Math.max(bot, Math.min(top, v))) / (top - bot) * (H - 8);
+  sctx.strokeStyle = 'rgba(126,170,214,.25)'; sctx.lineWidth = 1;
+  sctx.beginPath(); sctx.moveTo(0, y(0)); sctx.lineTo(W, y(0)); sctx.stroke();
+  sctx.setLineDash([4,4]); sctx.strokeStyle = COL.rec;
+  sctx.beginPath(); sctx.moveTo(0, y(S.thr)); sctx.lineTo(W, y(S.thr)); sctx.stroke(); sctx.setLineDash([]);
+  const d = S.spark;
+  if (d.length > 1){
+    sctx.strokeStyle = COL.straight; sctx.lineWidth = 1.5; sctx.beginPath();
+    d.forEach((v, i) => { const X = W - (d.length - 1 - i) * (W / 199); i ? sctx.lineTo(X, y(v)) : sctx.moveTo(X, y(v)); });
+    sctx.stroke();
+  }
+  if (S.stepFlash > 0){
+    sctx.fillStyle = 'rgba(242,193,78,' + (S.stepFlash * .35) + ')'; sctx.fillRect(0,0,W,H);
+    S.stepFlash = Math.max(0, S.stepFlash - .08);
+  }
+}
+
+/* ---------- UI ---------- */
+const fmtTime = ms => { const s = Math.floor(ms/1000); return String(Math.floor(s/60)).padStart(2,'0') + ':' + String(s % 60).padStart(2,'0'); };
+let lastUi = 0;
+function ui(throttled){
+  const now = performance.now();
+  if (throttled && now - lastUi < 150) return;
+  lastUi = now;
+  const n = S.steps.length, mp = mainPts(), last = mp[mp.length - 1];
+  $('vSteps').textContent = n;
+  $('vDist').textContent = (n * S.stride).toFixed(1);
+  $('vHome').textContent = Math.hypot(last[0], last[1]).toFixed(1);
+  const hd = ((Math.round(liveRel() / DEG) % 360) + 360) % 360;
+  $('vHead').textContent = String(hd).padStart(3, '0');
+  const el = S.elapsed + (S.recording ? Date.now() - S.segStart : 0);
+  $('status').classList.toggle('rec', S.recording);
+  $('statusText').textContent = S.recording ? 'Rec ' + fmtTime(el) : (n ? 'Paused ' + fmtTime(el) : 'Idle');
+  const b = $('btnStart');
+  b.textContent = S.recording ? 'Stop' : (n ? 'Resume' : 'Start');
+  b.classList.toggle('rec', S.recording);
+  $('empty').hidden = n > 0 || S.recording;
+  $('tilt').hidden = !(S.recording && (Math.abs(S.beta) > 55 || Math.abs(S.gamma) > 45)) || !$('banner').hidden;
+  document.querySelectorAll('#viewSeg button').forEach(x => x.setAttribute('aria-pressed', x.dataset.v === S.view));
+  document.querySelectorAll('#srcSeg button').forEach(x => x.setAttribute('aria-pressed', x.dataset.s === S.source));
+  $('stride').value = S.stride; $('strideOut').textContent = S.stride.toFixed(2) + ' m';
+  $('thr').value = S.thr; $('thrOut').textContent = S.thr.toFixed(1) + ' m/s²';
+  $('sparkThr').textContent = 'threshold ' + S.thr.toFixed(1);
+}
+
+function banner(msg){ $('bannerText').textContent = msg; $('banner').hidden = false; }
+$('bannerClose').onclick = () => { $('banner').hidden = true; };
+let toastT;
+function toast(msg){ const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, 2600); }
+
+/* ---------- wake lock ---------- */
+let wl = null;
+async function keepAwake(on){
+  try {
+    if (on && 'wakeLock' in navigator && !wl){ wl = await navigator.wakeLock.request('screen'); wl.addEventListener('release', () => { wl = null; }); }
+    else if (!on && wl){ await wl.release(); wl = null; }
+  } catch(e){}
+}
+let hiddenWhileRec = false;
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden' && S.recording) hiddenWhileRec = true;
+  if (document.visibilityState === 'visible'){
+    if (S.recording) keepAwake(true);
+    if (hiddenWhileRec){ hiddenWhileRec = false; toast('Screen was off. Steps in that time were not counted.'); }
+  }
+});
+
+/* ---------- controls ---------- */
+function start(){
+  if (!S.steps.length){
+    S.refG = S.liveG; S.refC = S.liveC; S.walkStart = Date.now(); S.elapsed = 0;
+  }
+  S.accG = {s:0,c:0,n:0}; S.accC = {s:0,c:0,n:0};
+  S.inPeak = false; S.lastStepT = performance.now();
+  S.segStart = Date.now(); S.recording = true;
+  keepAwake(true); ui();
+}
+function stop(){
+  S.recording = false; S.elapsed += Date.now() - S.segStart;
+  keepAwake(false); save(); ui();
+}
+$('btnStart').onclick = async () => {
+  if (S.recording){ stop(); return; }
+  if (!(await ensureSensors())) return;
+  $('banner').hidden = true;
+  start();
+};
+
+let clearArmed = null;
+$('btnClear').onclick = () => {
+  const b = $('btnClear');
+  if (!S.steps.length && !S.recording) return;
+  if (!clearArmed){
+    b.textContent = 'Tap to confirm'; b.classList.add('armed');
+    clearArmed = setTimeout(() => { clearArmed = null; b.textContent = 'Clear'; b.classList.remove('armed'); }, 2500);
+    return;
+  }
+  clearTimeout(clearArmed); clearArmed = null; b.textContent = 'Clear'; b.classList.remove('armed');
+  if (S.recording) stop();
+  S.steps = []; S.refG = null; S.refC = null; S.elapsed = 0;
+  recompute(); save(); ui(); V = null;
+};
+
+document.querySelectorAll('#viewSeg button').forEach(btn => btn.onclick = () => { S.view = btn.dataset.v; store.set('view', S.view); ui(); });
+document.querySelectorAll('#srcSeg button').forEach(btn => btn.onclick = () => {
+  S.source = btn.dataset.s; store.set('source', S.source);
+  if (S.source === 'compass' && S.steps.length && !S.steps.some(s => s.c != null)) toast('This walk has no compass readings, so it stays on gyro.');
+  recompute(); ui();
+});
+
+function setStride(v){ S.stride = Math.min(1, Math.max(0.4, Math.round(v * 100) / 100)); store.set('stride', S.stride); recompute(); ui(); }
+$('stride').oninput = e => setStride(+e.target.value);
+document.querySelectorAll('.stepper button').forEach(b => b.onclick = () => setStride(S.stride + +b.dataset.d));
+$('thr').oninput = e => { S.thr = +e.target.value; store.set('thr', S.thr); ui(); };
+$('calGo').onclick = () => {
+  const d = parseFloat($('calDist').value), n = S.steps.length;
+  if (!n){ toast('Walk the known distance first.'); return; }
+  if (!(d > 0)){ toast('Enter the distance you walked, in metres.'); return; }
+  const s = d / n;
+  if (s < 0.4 || s > 1){ toast('That gives ' + s.toFixed(2) + ' m per step. Check the step count.'); return; }
+  setStride(s); toast('Stride set to ' + S.stride.toFixed(2) + ' m from ' + n + ' steps');
+};
+
+const openSheet = on => { $('sheet').hidden = !on; $('sheetBg').hidden = !on; };
+$('btnSettings').onclick = () => openSheet(true);
+$('sheetClose').onclick = () => openSheet(false);
+$('sheetBg').onclick = () => openSheet(false);
+
+/* ---------- persistence, export, import ---------- */
+function snapshot(){
+  return { app:'pathtrace', version:1, exported:new Date().toISOString(), stride:S.stride, threshold:S.thr, source:S.source,
+    refG:S.refG, refC:S.refC, elapsedMs:S.elapsed, steps:S.steps };
+}
+function save(){ store.set('walk', snapshot()); }
+let saveT; function saveSoon(){ clearTimeout(saveT); saveT = setTimeout(save, 800); }
+function load(d){
+  if (!d || !Array.isArray(d.steps)) throw new Error('not a Pathtrace walk file');
+  S.steps = d.steps.filter(s => s && typeof s.g === 'number').map(s => ({ t:s.t|0, g:s.g, c: typeof s.c === 'number' ? s.c : null }));
+  S.refG = typeof d.refG === 'number' ? d.refG : null;
+  S.refC = typeof d.refC === 'number' ? d.refC : null;
+  S.elapsed = d.elapsedMs || 0;
+  if (typeof d.stride === 'number') S.stride = Math.min(1, Math.max(.4, d.stride));
+  V = null; recompute(); ui();
+}
+
+function dataURLtoBlob(u){
+  const [h, b] = u.split(','); const bin = atob(b); const arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return new Blob([arr], { type: h.split(':')[1].split(';')[0] });
+}
+$('btnExport').onclick = async () => {
+  if (!S.steps.length){ toast('Nothing to export yet. Record a walk first.'); return; }
+  const d = new Date(), name = 'walk-' + d.toISOString().slice(0,16).replace(/[:T]/g, '-');
+  const png = dataURLtoBlob(cv.toDataURL('image/png'));
+  const json = new Blob([JSON.stringify(snapshot())], { type:'application/json' });
+  const files = [ new File([png], name + '.png', { type:'image/png' }), new File([json], name + '.json', { type:'application/json' }) ];
+  if (navigator.canShare && navigator.canShare({ files })){
+    try { await navigator.share({ files, title:'Pathtrace walk' }); return; }
+    catch(e){ if (e.name === 'AbortError') return; }
+  }
+  for (const f of files){
+    const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = f.name;
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  }
+};
+$('importFile').onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  const rd = new FileReader();
+  rd.onload = () => {
+    try { if (S.recording) stop(); load(JSON.parse(rd.result)); save(); openSheet(false); toast('Opened ' + f.name); }
+    catch(err){ toast('Could not open that file: ' + err.message); }
+  };
+  rd.readAsText(f); e.target.value = '';
+};
+
+$('demoBtn').onclick = () => {
+  if (S.recording) stop();
+  // L-shaped flat walked clockwise from the front door, with gyro drift and a magnetic bend near "the fridge"
+  const legs = [[0,14],[90,12],[180,6],[270,5],[180,8],[270,7]];
+  const n3 = () => Math.random() + Math.random() + Math.random() - 1.5;
+  let drift = 0, t = 0; const steps = [];
+  for (const [deg, n] of legs){
+    for (let i = 0; i < n; i++){
+      drift += 0.25 * DEG; t += 540 + Math.random() * 90;
+      const truth = deg * DEG;
+      const bend = (deg === 90 && i > n * .3 && i < n * .7) ? 16 * DEG : 0;
+      steps.push({ t:Math.round(t), g:+wrap(truth + drift + n3() * 5 * DEG).toFixed(4), c:+wrap(truth + 0.6 + bend + n3() * 7 * DEG).toFixed(4) });
+    }
+  }
+  load({ steps, refG:0, refC:0.6, elapsedMs:Math.round(t), stride:S.stride });
+  save(); openSheet(false); toast('Demo: 52 steps around an L-shaped flat');
+};
+
+/* ---------- boot ---------- */
+try { const w = store.get('walk', null); if (w && w.steps && w.steps.length){ load(w); toast('Restored your last walk'); } } catch(e){}
+recompute(); ui();
+requestAnimationFrame(draw);
+})();
+</script>
+</body>
+</html>
