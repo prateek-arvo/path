@@ -302,10 +302,11 @@ function dwellSecs(trace, t0, t1, gOut){
 }
 
 /* A turnaround is a reversal (>= 140°) between two straight runs with at most four steps in between:
-   on the spot, on a tight curve, or stopping to look sideways first. Steps in between count as no
+   on the spot, on a tight curve, or stopping to look round partway. Steps in between count as no
    distance, so you come back along the line you went out on. The exception is walking round
-   something (the foot of a bed): a steady crosswise heading held while taking firm steps. */
-function findUturns(hs, w){
+   something (the foot of a bed): holding a steady sideways heading while the steps in between carry
+   you well to the side, at least 1.4 m, or 1 m with firm steps. Narrower than that is the same path. */
+function findUturns(hs, w, lens){
   const st = w.steps, n = hs.length, pivot = new Set(), startAt = new Map();
   const amps = st.map(s => s.a).filter(a => a > 0), med = amps.length >= 5 ? median(amps) : 0;
   const TURN = 35 * DEG, REV = 140 * DEG;
@@ -314,12 +315,11 @@ function findUturns(hs, w){
     for (let m = k + 1; m <= Math.min(n - 1, k + 5); m++){
       if (Math.abs(wrap(hs[m] - hs[k])) < REV) continue;
       if (m < n - 1 && Math.abs(wrap(hs[m + 1] - hs[m])) >= TURN) continue;   // still turning: try the next step
-      // steps in between must be mid-turn: not more walking in either direction, no straight run
-      // among them, and turning steadily one way (a turnaround doesn't wiggle back)
+      // steps in between must be mid-turn (not more walking in either direction), and the turn must go
+      // steadily one way: a turnaround doesn't wiggle back, though it may pause partway round
       let mid = true, total = 0;
       for (let q = k + 1; q < m; q++){
         if (Math.abs(wrap(hs[q] - hs[k])) < 20 * DEG || Math.abs(wrap(hs[q] - hs[m])) < 20 * DEG) mid = false;
-        if (q > k + 1 && Math.abs(wrap(hs[q] - hs[q - 1])) < 15 * DEG) mid = false;
       }
       if (!mid) break;
       const deltas = [];
@@ -327,9 +327,15 @@ function findUturns(hs, w){
       if (Math.abs(total) < REV || Math.abs(total) > 220 * DEG || deltas.some(d => Math.sign(d) !== Math.sign(total) && Math.abs(d) > 25 * DEG)) continue;
       let around = false;
       if (m > k + 1){
-        const firm = med > 0 ? st.slice(k + 1, m).some(s => s.a >= 0.6 * med) : true;
+        let side = 0, firm = med <= 0;
+        for (let q = k + 1; q < m; q++){
+          side += Math.sin(wrap(hs[q] - hs[k])) * lens[q];
+          if (med > 0 && st[q].a >= 0.6 * med) firm = true;
+        }
+        side = Math.abs(side);
+        const wide = side >= 1.4 || (side >= 1.0 && firm);
         const dw = dwellSecs(w.trace, st[k].t, st[m].t, st[k].g);
-        around = dw == null ? (med > 0 ? firm : m - k - 1 >= 2) : (dw >= 0.3 && firm);
+        around = wide && (dw == null || dw >= 0.3);
       }
       if (!around){ for (let q = k + 1; q < m; q++) pivot.add(q); startAt.set(m, k); k = m - 1; }
       break;
@@ -393,6 +399,51 @@ function travelDir(pts, s, dir){
   const a = pts[s - 1], b = pts[s], x = b[0] - a[0], y = b[1] - a[1];
   return Math.hypot(x, y) < 1e-6 ? null : Math.atan2(dir * x, dir * y);
 }
+/* Junctions. You were following an earlier stretch and have just turned. Steps go uncounted during
+   slow turns and pauses, so you may have reached the junction you turned at a little before (or after)
+   the step count says. Walk along the stretch you were following, up to `ahead` metres forward and
+   `behind` metres back, and return the nearest spot where another earlier stretch runs the way you're
+   now heading (within 0.4 m of it, with room to go on along it). */
+function findJunction(pts, P, fol, h, i, ahead, behind){
+  const ux = Math.sin(h), uy = Math.cos(h), COS = Math.cos(35 * DEG);
+  const along = (J) => {
+    let best = null, bd = 0.4;
+    for (let s = 1; s <= i - 2; s++){
+      const a = pts[s - 1], b = pts[s];
+      if (Math.min(a[0], b[0]) - 0.5 > J[0] || Math.max(a[0], b[0]) + 0.5 < J[0] || Math.min(a[1], b[1]) - 0.5 > J[1] || Math.max(a[1], b[1]) + 0.5 < J[1]) continue;
+      const vx = b[0] - a[0], vy = b[1] - a[1], sl = Math.hypot(vx, vy);
+      if (sl < 0.2) continue;
+      const ca = (vx * ux + vy * uy) / sl;
+      if (Math.abs(ca) < COS || (ca > 0 && s > i - 7)) continue;
+      let t = ((J[0] - a[0]) * vx + (J[1] - a[1]) * vy) / (sl * sl);
+      const dir = ca > 0 ? 1 : -1;
+      if ((dir > 0 && t > 0.95) || (dir < 0 && t < 0.05)) continue;     // no room to go on along it
+      t = Math.max(0, Math.min(1, t));
+      const d = Math.hypot(J[0] - a[0] - vx * t, J[1] - a[1] - vy * t);
+      if (d < bd){ bd = d; best = { s, t, dir, q: [a[0] + vx * t, a[1] + vy * t] }; }
+    }
+    return best;
+  };
+  const walk = (sgn, maxD) => {                     // sample the followed stretch every 0.1 m in one direction
+    if (maxD <= 0) return null;
+    const dir = fol.dir * sgn, corners = [];
+    let s = fol.s, cur = P.slice(), d = 0;
+    for (let g = 0; g < 200 && d <= maxD; g++){
+      const hit = along(cur);
+      if (hit) return { ...hit, J: cur.slice(), dist: d, corners };
+      if (s < 1 || s > i - 2) return null;
+      const a = pts[s - 1], b = pts[s], end = dir > 0 ? b : a;
+      const rx = end[0] - cur[0], ry = end[1] - cur[1], rl = Math.hypot(rx, ry);
+      if (rl < 0.1){ corners.push(end.slice()); s += dir; if (s < 1 || s > i - 2) return null; continue; }
+      cur = [cur[0] + rx / rl * 0.1, cur[1] + ry / rl * 0.1]; d += 0.1;
+    }
+    return null;
+  };
+  const fwd = walk(1, ahead), back = walk(-1, behind);
+  if (fwd && back) return fwd.dist <= back.dist ? fwd : { ...back, behind: true };
+  return fwd || (back && { ...back, behind: true });
+}
+
 /* While you're on an earlier stretch, each step is dead-reckoned as usual and then moved sideways onto
    the nearest earlier stretch that runs your way (in either direction) within 0.8 m, the way a sat-nav
    puts a car on the road. Overlapping copies, junctions and corners need no special handling, and if you
@@ -506,7 +557,7 @@ function spread(pts, H, L, from, i, p, q){
 function buildCorrected(hs, w, lens, cfg){
   const n = hs.length, events = { uturns: 0, joins: 0 }, pts = [[0, 0]];
   if (!n) return { pts, events };
-  const { pivot, startAt } = findUturns(hs, w);
+  const { pivot, startAt } = findUturns(hs, w, lens);
   const { H, axis } = correctHeadings(hs, pivot, cfg, w.steps);
   const L = lens.map((l, i) => pivot.has(i) ? 0 : l);
   /* Turning round on a curve really moves you sideways (a 3-step curve, about 0.9 m). The map draws you
@@ -525,6 +576,7 @@ function buildCorrected(hs, w, lens, cfg){
   const marks = new Set((w.anchors || []).map(a => a.i));
   const strength = JOIN[cfg.join] != null ? JOIN[cfg.join] : 1;
   let anchor = 0, fol = null, cand = null;
+  const via = [];                                  // extra corners to draw before a point (turns at junctions)
   const lerp = (arr, s, f) => arr[s - 1] + (arr[s] - arr[s - 1]) * f;
   for (let i = 1; i <= n; i++){
     const h = H[i - 1], len = L[i - 1], prev = pts[i - 1];
@@ -548,17 +600,39 @@ function buildCorrected(hs, w, lens, cfg){
     if (fol){
       if (len === 0){ p = prev.slice(); fixed = true; inherit = [fx[i - 1], fy[i - 1]]; }
       else {
-        const sn = snapStep(pts, p, prev, h, len, i, fol);
-        if (sn){
+        // just turned off the stretch you were following? place the turn at the junction you most likely took
+        const td = travelDir(pts, fol.s, fol.dir);
+        let jn = null;
+        if (td != null && Math.abs(wrap(h - td)) > 45 * DEG){
+          const at = fol.lost ? pts[i - 1 - fol.lost] : prev;
+          jn = findJunction(pts, at, fol, h, i, fol.lost ? 0 : 1.5, 1.0 - (fol.away || 0));
+        }
+        if (jn){
+          if (jn.behind){                           // you'd gone past it: pull the overshoot back to it
+            for (let q = i - 1; q > Math.max(anchor, i - 4); q--){
+              if (Math.hypot(pts[q][0] - jn.J[0], pts[q][1] - jn.J[1]) <= jn.dist + (fol.away || 0) + 0.05) pts[q] = jn.J.slice(); else break;
+            }
+          }
+          const a = pts[jn.s - 1], b = pts[jn.s], sl = Math.hypot(b[0] - a[0], b[1] - a[1]);
+          const ex = (b[0] - a[0]) / sl * jn.dir, ey = (b[1] - a[1]) / sl * jn.dir;
+          p = [jn.q[0] + ex * len, jn.q[1] + ey * len];
+          // draw the turn through the junction along the old path, not as a shortcut beside it
+          via[i] = jn.behind ? [jn.q] : [...jn.corners, jn.J, jn.q];
+          fol = { s: jn.s, dir: jn.dir, lost: 0, away: 0 }; fixed = true;
+          inherit = [lerp(fx, jn.s, jn.t), lerp(fy, jn.s, jn.t)];
+        }
+        const sn = jn ? null : snapStep(pts, p, prev, h, len, i, fol);
+        if (jn){ /* placed at the junction above */ }
+        else if (sn){
           if (fol.lost) spread(pts, H, L, i - 1 - fol.lost, i, p, sn.q);   // back on it after a step or two off
-          p = sn.q; fol = { s: sn.s, dir: sn.dir, lost: 0 }; fixed = true;
+          p = sn.q; fol = { s: sn.s, dir: sn.dir, lost: 0, away: 0 }; fixed = true;
           // the old stretch fixes how far to the side you are, not how far along it: that is still counted
           // from your steps, so the along-the-stretch uncertainty keeps growing
           const sx = Math.abs(Math.sin(h - axis)) >= Math.SQRT1_2;
           inherit = [sx ? fx[i - 1] + len * Math.abs(Math.sin(h - axis)) : lerp(fx, sn.s, sn.t),
                      sx ? lerp(fy, sn.s, sn.t) : fy[i - 1] + len * Math.abs(Math.cos(h - axis))];
         }
-        else if ((fol.lost || 0) < 2) fol.lost = (fol.lost || 0) + 1;    // off it: remember it for two more steps
+        else if ((fol.lost || 0) < 2){ fol.lost = (fol.lost || 0) + 1; fol.away = (fol.away || 0) + len; }  // off it: remember it for two more steps
         else fol = null;                          // you've left the old path: carry on from here
       }
     } else if (len > 0 && strength > 0){
@@ -593,13 +667,15 @@ function buildCorrected(hs, w, lens, cfg){
     }
     if (fixed) anchor = i;
   }
-  return { pts, events };
+  const drawn = [pts[0]];
+  for (let i = 1; i < pts.length; i++){ if (via[i]) drawn.push(...via[i]); drawn.push(pts[i]); }
+  return { pts, drawn, events };
 }
 
 function computePaths(w, cfg){
   const hs = relHeadings(w, cfg.source), lens = stepLengths(w, cfg);
   const c = buildCorrected(hs, w, lens, cfg);
-  return { hs, lens, raw: buildPath(hs, lens), straight: c.pts, events: c.events };
+  return { hs, lens, raw: buildPath(hs, lens), straight: c.pts, drawn: c.drawn || c.pts, events: c.events };
 }
 
 /* ---- demo walk: a bedroom with the bed against the far wall ---- */
@@ -700,7 +776,7 @@ const S = {
   join: store.get('join', 'normal'),
   liveG:null, liveC:null, beta:0, gamma:0,
   accG:{s:0,c:0,n:0}, accC:{s:0,c:0,n:0},
-  gEst:9.81, sig:0, sMax:-Infinity, sMin:Infinity, inPeak:false, peakT:0, peakV:0, lastStepT:0,
+  gEst:9.81, sig:0, sMax:-Infinity, sMin:Infinity, bMax:0, inPeak:false, peakT:0, peakV:0, lastStepT:0,
   spark:[], stepFlash:0,
   seen:{ uturns:0, joins:0 },
   cache:{ hs:[], lens:[], raw:[[0,0]], straight:[[0,0]], events:{ uturns:0, joins:0 } }
@@ -750,7 +826,8 @@ function onOrient(e){
     acc(S.accG, S.liveG);
     if (S.liveC != null) acc(S.accC, S.liveC);
     const t = Date.now() - S.walkStart;      // heading trace: tells a U-turn from walking round the bed
-    if (t - S.lastTraceT >= 100){ S.trace.push([t, +S.liveG.toFixed(3)]); S.lastTraceT = t; }
+    // also the strongest bounce since the last sample, so a walk file shows steps the counter missed
+    if (t - S.lastTraceT >= 100){ S.trace.push([t, +S.liveG.toFixed(3), +S.bMax.toFixed(2)]); S.lastTraceT = t; S.bMax = 0; }
   }
 }
 
@@ -764,6 +841,7 @@ function onMotion(e){
   S.spark.push(S.sig); if (S.spark.length > 200) S.spark.shift();
   if (S.recording){
     if (S.sig > S.sMax) S.sMax = S.sig;
+    if (Math.abs(S.sig) > S.bMax) S.bMax = Math.abs(S.sig);
     if (S.sig < S.sMin) S.sMin = S.sig;
     detect(performance.now());
   }
@@ -835,7 +913,7 @@ function sizeCanvas(c){
 function shownPaths(){
   const v = S.view, out = [];
   if (v === 'raw' || v === 'both') out.push({ pts:S.cache.raw, col:COL.raw, w: v === 'both' ? 2 : 3, a: v === 'both' ? .7 : 1, dots: v === 'raw' });
-  if (v === 'straight' || v === 'both') out.push({ pts:S.cache.straight, col:COL.straight, w:3, a:1, dots: false });
+  if (v === 'straight' || v === 'both') out.push({ pts:S.cache.drawn || S.cache.straight, col:COL.straight, w:3, a:1, dots: false });
   return out;
 }
 function mainPts(){ return S.view === 'raw' ? S.cache.raw : S.cache.straight; }
@@ -1093,7 +1171,7 @@ function load(d){
   resetWalk();
   S.steps = d.steps.filter(s => s && typeof s.g === 'number')
     .map(s => ({ t:s.t|0, g:s.g, c: typeof s.c === 'number' ? s.c : null, a: typeof s.a === 'number' ? s.a : 0 }));
-  S.trace = Array.isArray(d.trace) ? d.trace.filter(p => Array.isArray(p) && p.length === 2) : [];
+  S.trace = Array.isArray(d.trace) ? d.trace.filter(p => Array.isArray(p) && p.length >= 2) : [];
   S.anchors = Array.isArray(d.anchors) ? d.anchors.filter(a => a && a.i > 0) : [];
   S.refG = typeof d.refG === 'number' ? d.refG : null;
   S.refC = typeof d.refC === 'number' ? d.refC : null;
