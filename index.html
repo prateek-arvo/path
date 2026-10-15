@@ -214,7 +214,7 @@ label.file input{position:absolute;inset:0;opacity:0}
   <div class="field">
     <label>Join paths you walk again</label>
     <div class="seg four" id="joinSeg" role="group" aria-label="Join paths you walk again"><button data-j="off">Off</button><button data-j="low">Low</button><button data-j="normal">Normal</button><button data-j="high">High</button></div>
-    <p class="hint">When you turn around on the spot, the trace follows your path back. When you walk alongside an earlier stretch, it snaps onto it and spreads the error over the steps in between. Lower this if separate corridors get joined; raise it if a return path still runs beside the old one.</p>
+    <p class="hint">Lines closer than about 1 m count as the same path. When you turn round (on the spot, on a curve, or after stopping to look), the trace follows your path back. When you walk along an earlier stretch, it snaps onto it and spreads the error over the steps in between. Lower this if separate paths get joined; raise it if a return path still runs beside the old one.</p>
   </div>
 
   <h3 class="group">Sensors and data</h3>
@@ -230,7 +230,7 @@ label.file input{position:absolute;inset:0;opacity:0}
       <label class="btn small file">Open walk file<input id="importFile" type="file" accept="application/json,.json"></label>
       <button id="demoBtn" class="btn small">Load demo walk</button>
     </div>
-    <p class="hint">Export saves a picture and a .json of the walk. Open a .json here to look at it again on any device. The demo is a simulated bedroom walk: both sides of the bed, then back out the door.</p>
+    <p class="hint">Export saves a picture and a .json of the walk. Open a .json here to look at it again on any device. The demo is a simulated bedroom walk with everyday sensor errors: both sides of the bed (turning round on the spot at one, on a curve at the other), then back out the door.</p>
   </div>
 
   <div class="field tips">
@@ -301,32 +301,37 @@ function dwellSecs(trace, t0, t1, gOut){
   return secs;
 }
 
-/* A U-turn is a reversal (>= 140°) between two straight runs with at most two steps in between.
-   Steps in between are pivots (no distance) unless you spent real time walking crosswise,
-   which means you walked around something (the foot of a bed), not turned on the spot. */
+/* A turnaround is a reversal (>= 140°) between two straight runs with at most four steps in between:
+   on the spot, on a tight curve, or stopping to look sideways first. Steps in between count as no
+   distance, so you come back along the line you went out on. The exception is walking round
+   something (the foot of a bed): a steady crosswise heading held while taking firm steps. */
 function findUturns(hs, w){
   const st = w.steps, n = hs.length, pivot = new Set(), startAt = new Map();
   const amps = st.map(s => s.a).filter(a => a > 0), med = amps.length >= 5 ? median(amps) : 0;
   const TURN = 35 * DEG, REV = 140 * DEG;
   for (let k = 0; k < n - 1; k++){
     if (k > 0 && Math.abs(wrap(hs[k] - hs[k - 1])) >= TURN) continue;
-    for (let m = k + 1; m <= Math.min(n - 1, k + 3); m++){
+    for (let m = k + 1; m <= Math.min(n - 1, k + 5); m++){
       if (Math.abs(wrap(hs[m] - hs[k])) < REV) continue;
-      if (m < n - 1 && Math.abs(wrap(hs[m + 1] - hs[m])) >= TURN) break;
-      // steps in between must be mid-turn, not more walking in either direction
-      let mid = true;
-      for (let q = k + 1; q < m; q++) if (Math.abs(wrap(hs[q] - hs[k])) < TURN || Math.abs(wrap(hs[q] - hs[m])) < TURN) mid = false;
-      if (!mid) break;
-      let uturn = true;
-      if (m > k + 1){
-        const dw = dwellSecs(w.trace, st[k].t, st[m].t, st[k].g);
-        if (dw != null) uturn = dw < 0.3;
-        else {                                  // no heading trace (older files): pivots are soft steps
-          uturn = med > 0;
-          for (let q = k + 1; q < m; q++) if (!(st[q].a > 0 && st[q].a < 0.7 * med)) uturn = false;
-        }
+      if (m < n - 1 && Math.abs(wrap(hs[m + 1] - hs[m])) >= TURN) continue;   // still turning: try the next step
+      // steps in between must be mid-turn: not more walking in either direction, no straight run
+      // among them, and turning steadily one way (a turnaround doesn't wiggle back)
+      let mid = true, total = 0;
+      for (let q = k + 1; q < m; q++){
+        if (Math.abs(wrap(hs[q] - hs[k])) < 20 * DEG || Math.abs(wrap(hs[q] - hs[m])) < 20 * DEG) mid = false;
+        if (q > k + 1 && Math.abs(wrap(hs[q] - hs[q - 1])) < 15 * DEG) mid = false;
       }
-      if (uturn){ for (let q = k + 1; q < m; q++) pivot.add(q); startAt.set(m, k); k = m - 1; }
+      if (!mid) break;
+      const deltas = [];
+      for (let q = k + 1; q <= m; q++){ const d = wrap(hs[q] - hs[q - 1]); deltas.push(d); total += d; }
+      if (Math.abs(total) < REV || Math.abs(total) > 220 * DEG || deltas.some(d => Math.sign(d) !== Math.sign(total) && Math.abs(d) > 25 * DEG)) continue;
+      let around = false;
+      if (m > k + 1){
+        const firm = med > 0 ? st.slice(k + 1, m).some(s => s.a >= 0.6 * med) : true;
+        const dw = dwellSecs(w.trace, st[k].t, st[m].t, st[k].g);
+        around = dw == null ? (med > 0 ? firm : m - k - 1 >= 2) : (dw >= 0.3 && firm);
+      }
+      if (!around){ for (let q = k + 1; q < m; q++) pivot.add(q); startAt.set(m, k); k = m - 1; }
       break;
     }
   }
@@ -363,6 +368,7 @@ function correctHeadings(hs, pivot, cfg, st){
     const dt = Math.max(0, st[i].t - lastT); lastT = st[i].t;
     drift += rate * dt;
     const h = wrap(hs[i] - drift);
+    if (pivot.has(i)){ out[i] = h; continue; }       // steps taken while turning round keep their own heading
     let s = Math.sin(h), c = Math.cos(h);
     for (const j of [i - 1, i + 1]){
       if (j < 0 || j >= n || pivot.has(j) || Math.abs(wrap(hs[j] - hs[i])) >= 30 * DEG) continue;
@@ -383,86 +389,83 @@ function correctHeadings(hs, pivot, cfg, st){
 }
 
 /* ---- following an earlier stretch of the path ---- */
-// A follow state sits on segment s (from point s-1 to point s) at fraction f, moving dir (+1 the way
-// it was first walked, -1 backwards), never beyond segment lim.
-function segLen(pts, s){ const a = pts[s - 1], b = pts[s]; return Math.hypot(b[0] - a[0], b[1] - a[1]); }
 function travelDir(pts, s, dir){
   const a = pts[s - 1], b = pts[s], x = b[0] - a[0], y = b[1] - a[1];
   return Math.hypot(x, y) < 1e-6 ? null : Math.atan2(dir * x, dir * y);
 }
-function posAt(pts, st){ const a = pts[st.s - 1], b = pts[st.s]; return [a[0] + (b[0] - a[0]) * st.f, a[1] + (b[1] - a[1]) * st.f]; }
-
-// Move len metres along the old path. Where the old path turns and you don't, or where it ends,
-// hold there: step counts out and back often differ by one. After holding 1.5 steps' worth,
-// you have left it (null).
-function advanceAlong(pts, st, len, h){
-  let s = st.s, f = st.f, rem = len;
-  const dir = st.dir, lim = st.lim;
-  for (let g = 0; g < 10000; g++){
-    const sl = segLen(pts, s);
-    if (sl >= 1e-6){
-      const avail = dir > 0 ? (1 - f) * sl : f * sl;
-      if (rem <= avail){ f += dir * rem / sl; return { ...st, s, f, held: 0 }; }
-      rem -= avail; f = dir > 0 ? 1 : 0;
-    }
-    let ns = s + dir;
-    while (ns >= 1 && ns <= lim && segLen(pts, ns) < 1e-6) ns += dir;
-    if (ns < 1 || ns > lim || Math.abs(wrap(h - travelDir(pts, ns, dir))) >= 50 * DEG){
-      const held = (st.held || 0) + rem / len;
-      return held <= 1.5 ? { ...st, s, f, held } : null;
-    }
-    s = ns; f = dir > 0 ? 0 : 1;
+/* While you're on an earlier stretch, each step is dead-reckoned as usual and then moved sideways onto
+   the nearest earlier stretch that runs your way (in either direction) within 0.8 m, the way a sat-nav
+   puts a car on the road. Overlapping copies, junctions and corners need no special handling, and if you
+   walk on past where the old path turned, you simply carry on. Stretches running your way only count
+   after 7 steps (before that they're the one you're on); ones you walk back against count after 2.
+   Legs right next to the one you were on (its own corners) are picked up from up to 1.4 m away, since
+   a miscounted step on the way out shifts where a corner lands. If nothing is near, but the old path
+   turns your way at a corner within 1.2 m of you (you turned a little earlier than last time), you go
+   round that corner. null when you're off the old path. */
+function snapStep(pts, p, prev, h, len, i, fol){
+  const ux = Math.sin(h), uy = Math.cos(h), COS = Math.cos(35 * DEG);
+  let best = null, bd = Infinity;
+  for (let s = 1; s <= i - 2; s++){
+    const a = pts[s - 1], b = pts[s];
+    if (Math.min(a[0], b[0]) - 2.3 > p[0] || Math.max(a[0], b[0]) + 2.3 < p[0] || Math.min(a[1], b[1]) - 2.3 > p[1] || Math.max(a[1], b[1]) + 2.3 < p[1]) continue;
+    const vx = b[0] - a[0], vy = b[1] - a[1], sl = Math.hypot(vx, vy);
+    if (sl < 0.2) continue;
+    const ca = (vx * ux + vy * uy) / sl;
+    if (Math.abs(ca) < COS) continue;
+    if (ca > 0 && s > i - 7) continue;
+    const t = ((p[0] - a[0]) * vx + (p[1] - a[1]) * vy) / (sl * sl);
+    if (t < -0.8 / sl || t > 1 + 0.8 / sl) continue;          // alongside it, or within 0.8 m of its ends
+    const qx = a[0] + vx * t, qy = a[1] + vy * t, d = Math.hypot(p[0] - qx, p[1] - qy);
+    const near = Math.abs(s - fol.s) <= 4;
+    if (d > (near ? 1.4 : 0.8)) continue;
+    const score = d - (Math.abs(s - fol.s) <= 1 ? 0.15 : 0);   // stay on the same stretch when it's a tie
+    if (score < bd){ bd = score; best = { s, t: Math.max(0, Math.min(1, t)), q: [qx, qy], dir: ca > 0 ? 1 : -1 }; }
   }
-  return null;
-}
-// You turned before the old path did: find its corner within maxD metres ahead that goes your way.
-function cornerAhead(pts, st, h, maxD){
-  let s = st.s;
-  const dir = st.dir, sl = segLen(pts, s);
-  let d = dir > 0 ? (1 - st.f) * sl : st.f * sl;
-  for (let g = 0; g < 40 && d <= maxD; g++){
+  if (best || fol.lost) return best;
+  const dir = fol.dir;
+  let s = fol.s, d = 0;
+  for (let g = 0; g < 40 && d <= 1.6; g++){
     s += dir;
-    if (s < 1 || s > st.lim) return null;
+    if (s < 1 || s > i - 2) break;
     const td = travelDir(pts, s, dir);
     if (td == null) continue;
-    if (Math.abs(wrap(h - td)) < 35 * DEG) return { ...st, s, f: dir > 0 ? 0 : 1 };
-    d += segLen(pts, s);
+    const a = pts[s - 1], b = pts[s], sl = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (Math.abs(wrap(h - td)) < 35 * DEG){
+      const c = dir > 0 ? a : b, f = Math.min(1, len / sl);
+      if (Math.hypot(c[0] - prev[0], c[1] - prev[1]) > 1.2) return null;
+      return { s, t: dir > 0 ? f : 1 - f, q: [c[0] + Math.sin(td) * Math.min(len, sl), c[1] + Math.cos(td) * Math.min(len, sl)], dir };
+    }
+    d += sl;
   }
   return null;
 }
-function followStep(pts, fol, h, len){
-  const cur = travelDir(pts, fol.s, fol.dir);
-  let st = null;
-  if (cur != null && Math.abs(wrap(h - cur)) < 50 * DEG) st = advanceAlong(pts, fol, len, h);
-  else { const c = cornerAhead(pts, fol, h, 1.6); if (c) st = advanceAlong(pts, c, len, h); }
-  if (!st) return null;
-  Object.assign(fol, st);
-  return posAt(pts, st);
-}
 
-/* Revisit check: is this step running alongside (or against) a stretch walked at least 5 m ago, and
-   closer to it than the sideways error you could have built up since? Once headings are squared up,
-   sideways error comes from miscounted steps across (8% of sideways travel) and a little leftover
-   heading error (2.5% of travel along), plus 0.55 m for steps lost or doubled at turns. Capped at
-   1.6 m, times the join setting. While you follow an old stretch you inherit its travel figures,
-   so ground you walked back over doesn't add error. */
+/* Revisit check: is this step running alongside an earlier stretch, closer to it than the sideways
+   error you could have built up since? Earlier stretches running your way only count after 5 m (before
+   that they're the stretch you're on); ones you're walking back against count straight away. Once
+   headings are squared up, sideways error comes from miscounted steps across (8% of sideways travel)
+   and leftover heading error (2.5% of travel along), plus 0.75 m: lines closer than that are the same
+   path. Capped at 1.6 m, times the join setting. While you follow an old stretch you inherit its
+   sideways travel figure, so ground you walked back over doesn't add sideways error. */
 function findMatch(pts, cum, fx, fy, i, p, h, cumNow, fxNow, fyNow, axis, strength){
   const ux = Math.sin(h), uy = Math.cos(h), COS = Math.cos(30 * DEG);
   const along = Math.abs(Math.cos(h - axis)), across = Math.abs(Math.sin(h - axis));
   let best = null, bestScore = 1;
-  for (let j = 1; j <= i - 7; j++){
-    if (cumNow - cum[j] < 5) break;
-    const a = pts[j - 1], b = pts[j], vx = b[0] - a[0], vy = b[1] - a[1], sl = Math.hypot(vx, vy);
+  for (let j = 1; j <= i - 3; j++){
+    const a = pts[j - 1], b = pts[j];
+    if (Math.min(a[0], b[0]) - 2.7 > p[0] || Math.max(a[0], b[0]) + 2.7 < p[0] || Math.min(a[1], b[1]) - 2.7 > p[1] || Math.max(a[1], b[1]) + 2.7 < p[1]) continue;
+    const vx = b[0] - a[0], vy = b[1] - a[1], sl = Math.hypot(vx, vy);
     if (sl < 0.2) continue;
     const ca = (vx * ux + vy * uy) / sl;
     if (Math.abs(ca) < COS) continue;
+    if (ca > 0 && (j > i - 7 || cumNow - cum[j] < 5)) continue;
     let t = ((p[0] - a[0]) * vx + (p[1] - a[1]) * vy) / (sl * sl);
-    if (t < -0.3 || t > 1.3) continue;
+    if (t < -0.4 / sl || t > 1 + 0.4 / sl) continue;               // alongside it, or within 0.4 m of its ends
     t = Math.max(0, Math.min(1, t));
     const qx = a[0] + vx * t, qy = a[1] + vy * t, d = Math.hypot(p[0] - qx, p[1] - qy);
     const dX = Math.abs(fxNow - fx[j]), dY = Math.abs(fyNow - fy[j]);
     const side = along * dX + across * dY, fwd = across * dX + along * dY;
-    const gate = Math.min(1.6, 0.55 + 0.08 * side + 0.025 * fwd) * strength;
+    const gate = Math.min(1.6, 0.75 + 0.08 * side + 0.025 * fwd) * strength;
     if (d >= gate) continue;
     const score = d / gate;
     if (score < bestScore){ bestScore = score; best = { j, t, q: [qx, qy], off: [qx - p[0], qy - p[1]], par: ca > 0 ? 1 : -1, score }; }
@@ -506,6 +509,18 @@ function buildCorrected(hs, w, lens, cfg){
   const { pivot, startAt } = findUturns(hs, w);
   const { H, axis } = correctHeadings(hs, pivot, cfg, w.steps);
   const L = lens.map((l, i) => pivot.has(i) ? 0 : l);
+  /* Turning round on a curve really moves you sideways (a 3-step curve, about 0.9 m). The map draws you
+     coming back on the same line, so it keeps a note of that sideways shift and takes it back off when
+     you later walk the other way across it; otherwise you'd overshoot the next corner by that much.
+     Turning on the spot (one shuffle or none) moves you nowhere, so it leaves no note. */
+  const owed = new Map();
+  for (const [m, k] of startAt){
+    if (m - k - 1 < 2) continue;
+    let dx = 0, dy = 0;
+    for (let q = k + 1; q < m; q++){ dx += Math.sin(H[q]) * lens[q] * 0.8; dy += Math.cos(H[q]) * lens[q] * 0.8; }
+    owed.set(m, [dx, dy]);
+  }
+  let debt = [0, 0];
   const cum = [0], fx = [0], fy = [0];   // distance walked; free travel across/along the walls
   const marks = new Set((w.anchors || []).map(a => a.i));
   const strength = JOIN[cfg.join] != null ? JOIN[cfg.join] : 1;
@@ -513,39 +528,62 @@ function buildCorrected(hs, w, lens, cfg){
   const lerp = (arr, s, f) => arr[s - 1] + (arr[s] - arr[s - 1]) * f;
   for (let i = 1; i <= n; i++){
     const h = H[i - 1], len = L[i - 1], prev = pts[i - 1];
-    let p = [prev[0] + Math.sin(h) * len, prev[1] + Math.cos(h) * len];
+    if (owed.has(i - 1)){ const o = owed.get(i - 1); debt = [debt[0] + o[0], debt[1] + o[1]]; }
+    let vx = Math.sin(h) * len, vy = Math.cos(h) * len;
+    if (debt[0] || debt[1]){                      // walking back across a straightened curve: pay it off,
+      const ca = Math.cos(axis), sa = Math.sin(axis);   // along each wall direction separately
+      let vu = vx * ca - vy * sa, vw = vx * sa + vy * ca, du = debt[0] * ca - debt[1] * sa, dw = debt[0] * sa + debt[1] * ca;
+      if (vu * du < 0){ const pay = Math.min(Math.abs(vu), Math.abs(du)); vu += Math.sign(du) * pay; du -= Math.sign(du) * pay; }
+      if (vw * dw < 0){ const pay = Math.min(Math.abs(vw), Math.abs(dw)); vw += Math.sign(dw) * pay; dw -= Math.sign(dw) * pay; }
+      vx = vu * ca + vw * sa; vy = -vu * sa + vw * ca;
+      debt = [du * ca + dw * sa, -du * sa + dw * ca];
+    }
+    let p = [prev[0] + vx, prev[1] + vy];
     let fixed = false, inherit = null;
     if (startAt.has(i - 1)){                      // turned around: walk back over the way you came
       const k = startAt.get(i - 1);
-      fol = { s: k + 1, f: 1, dir: -1, lim: k + 1, dyn: false };
+      fol = { s: k + 1, dir: -1 };
       cand = null; events.uturns++;
     }
     if (fol){
-      if (fol.dyn) fol.lim = Math.max(1, i - 7);
-      if (len === 0){ p = prev.slice(); fixed = true; }
-      else { const r = followStep(pts, fol, h, len); if (r){ p = r; fixed = true; } else fol = null; }
-      if (fol) inherit = [lerp(fx, fol.s, fol.f), lerp(fy, fol.s, fol.f)];
+      if (len === 0){ p = prev.slice(); fixed = true; inherit = [fx[i - 1], fy[i - 1]]; }
+      else {
+        const sn = snapStep(pts, p, prev, h, len, i, fol);
+        if (sn){
+          if (fol.lost) spread(pts, H, L, i - 1 - fol.lost, i, p, sn.q);   // back on it after a step or two off
+          p = sn.q; fol = { s: sn.s, dir: sn.dir, lost: 0 }; fixed = true;
+          // the old stretch fixes how far to the side you are, not how far along it: that is still counted
+          // from your steps, so the along-the-stretch uncertainty keeps growing
+          const sx = Math.abs(Math.sin(h - axis)) >= Math.SQRT1_2;
+          inherit = [sx ? fx[i - 1] + len * Math.abs(Math.sin(h - axis)) : lerp(fx, sn.s, sn.t),
+                     sx ? lerp(fy, sn.s, sn.t) : fy[i - 1] + len * Math.abs(Math.cos(h - axis))];
+        }
+        else if ((fol.lost || 0) < 2) fol.lost = (fol.lost || 0) + 1;    // off it: remember it for two more steps
+        else fol = null;                          // you've left the old path: carry on from here
+      }
     } else if (len > 0 && strength > 0){
       const ax = len * Math.abs(Math.sin(h - axis)), ay = len * Math.abs(Math.cos(h - axis));
       const m = findMatch(pts, cum, fx, fy, i, p, h, cum[i - 1] + len, fx[i - 1] + ax, fy[i - 1] + ay, axis, strength);
       if (m){
         // three steps in a row that agree, or two when the match is close
         const ev = 1 - m.score;
-        if (cand && Math.abs(m.j - cand.j) <= 6 && Math.hypot(m.off[0] - cand.off[0], m.off[1] - cand.off[1]) < 0.45) cand = { n: cand.n + 1, ev: cand.ev + ev, j: m.j, off: m.off };
-        else cand = { n: 1, ev, j: m.j, off: m.off };
+        if (cand && m.par === cand.par && Math.hypot(m.off[0] - cand.off[0], m.off[1] - cand.off[1]) < 0.45) cand = { n: cand.n + 1, ev: cand.ev + ev, par: m.par, off: m.off, miss: 0 };
+        else cand = { n: 1, ev, par: m.par, off: m.off, miss: 0 };
         if (cand.n >= 3 || (cand.n >= 2 && cand.ev >= 1.4)){   // you're back on an old path
           spread(pts, H, L, Math.max(anchor, m.j), i, p, m.q);
           p = m.q.slice();
-          fol = { s: m.j, f: m.t, dir: m.par, lim: Math.max(1, i - 7), dyn: true };
+          fol = { s: m.j, dir: m.par };
           inherit = [lerp(fx, m.j, m.t), lerp(fy, m.j, m.t)];
-          fixed = true; cand = null; events.joins++;
+          fixed = true; cand = null; events.joins++; debt = [0, 0];
         }
-      } else cand = null;
+      } else if (cand && cand.miss < 1) cand.miss++;   // one step with no match (a gap in the old path) is fine
+      else cand = null;
     }
     if (marks.has(i)){                              // you told us you're back at the start
       spread(pts, H, L, anchor, i, p, [0, 0]);
-      p = [0, 0]; fol = null; cand = null; fixed = true; inherit = [0, 0];
+      p = [0, 0]; fol = null; cand = null; fixed = true; inherit = [0, 0]; debt = [0, 0];
     }
+    if (cfg.debug) cfg.debug.push({ i, h: Math.round(h / DEG), len: +len.toFixed(2), mode: fol ? 'on:' + fol.s + (fol.dir > 0 ? '+' : '-') : 'free', cand: cand ? cand.n : 0, p: p.map(v => +v.toFixed(2)) });
     pts.push(p);
     cum.push(cum[i - 1] + len);
     if (inherit){ fx.push(inherit[0]); fy.push(inherit[1]); }
@@ -584,10 +622,26 @@ function simulateWalk(plan, seed, opts){
     truth.push([x, y]);
   };
   const turnOf = (from, to) => ((to - from) % 360 + 540) % 360 - 180;
-  const cuts = (k) => o.cut && plan[k] && plan[k][0] !== 'u' && plan[k - 1] && plan[k - 1][0] !== 'u'
+  const isWalk = op => op && typeof op[0] === 'number';
+  const cuts = (k) => o.cut && isWalk(plan[k]) && isWalk(plan[k - 1])
     && Math.abs(turnOf(plan[k - 1][0], plan[k][0])) > 1 && Math.abs(turnOf(plan[k - 1][0], plan[k][0])) < 120;
   plan.forEach((op, k) => {
+    // turn round on the spot, with one shuffle step
     if (op[0] === 'u'){ const sgn = op[1] || 1; move(op[2] || 450, head + 90 * sgn); rec(0.7, 6); move(op[2] || 450, head + 90 * sgn); return; }
+    // turn round while walking: n short steps round a tight curve
+    if (op[0] === 'arc'){
+      const sgn = op[1] || 1, n = op[2] || 3, h0 = head, sl = op[3] || 0.45;
+      for (let q = 0; q < n; q++){
+        const hd = h0 + sgn * 180 * (q + 0.5) / n;
+        move(150, hd); move(450, hd);
+        x += Math.sin(hd * DEG) * sl; y += Math.cos(hd * DEG) * sl;
+        rec(2 * Math.pow(sl / o.stride, 4) * (1 + N() * 0.06), 3);
+      }
+      move(150, h0 + sgn * 180); return;
+    }
+    // stop, turn sideways and look for a moment (one soft shuffle), then finish turning round
+    if (op[0] === 'pause'){ const sgn = op[1] || 1; move(300, head + 90 * sgn); rec(0.6, 6); move(op[2] || 1000, head); move(300, head + 90 * sgn); return; }
+    if (op[0] === 'wait'){ move(op[1] || 1500, head); return; }
     let [deg, m, miss] = op;
     const turn = turnOf(head, deg);
     if (cuts(k)){
@@ -616,6 +670,9 @@ function simulateWalk(plan, seed, opts){
 // Door at the start. Up to the foot of the bed, along one side to the headboard, turn around, back,
 // across the foot (one step missed), up the other side, turn around, back, and out to the door.
 const BEDROOM = [[0, 2.4], [90, 1.2], [0, 2.6], ['u'], [180, 2.6], [90, 2.6, 1], [0, 2.6], ['u', -1], [180, 2.6], [270, 3.8], [180, 2.4]];
+// The in-app demo: the same walk, turning round on a curve at the second side, with everyday sensor noise.
+const DEMO = [[0, 2.4], [90, 1.2], [0, 2.6], ['u'], [180, 2.6], [90, 2.6], [0, 2.6], ['arc', 1, 3], [180, 2.6], [270, 4.7], [180, 2.4]];
+const DEMO_NOISE = { drift: 0.3, miss: 0.03, dbl: 0.02, cut: true };
 /* PIPELINE END */
 
 const $ = id => document.getElementById(id);
@@ -1079,7 +1136,7 @@ $('importFile').onchange = e => {
 
 $('demoBtn').onclick = () => {
   if (S.recording) stop();
-  const w = simulateWalk(BEDROOM, 1);
+  const w = simulateWalk(DEMO, 3, DEMO_NOISE);
   load({ steps: w.steps, trace: w.trace, refG: w.refG, refC: w.refC, elapsedMs: w.elapsedMs, stride: S.stride });
   save(); openSheet(false);
   S.view = 'both'; store.set('view', S.view); ui();
