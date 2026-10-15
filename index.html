@@ -86,6 +86,18 @@ main{flex:1;position:relative;min-height:0;overflow:hidden}
   color:var(--text);font-weight:600;font-size:14px;z-index:1}
 .home-btn svg{width:18px;height:18px;stroke:var(--straight)}
 .home-btn:active{transform:scale(.97)}
+.home-btn.mark{bottom:60px}
+.home-btn.mark svg{stroke:var(--raw)}
+.places{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:12px 0}
+.places button{min-height:48px;border-radius:12px;border:1px solid var(--line);background:var(--panel-2);color:var(--text);font-weight:600;font-size:15px;padding:8px 10px;text-align:left;overflow-wrap:anywhere}
+.places button.start{border-color:rgba(95,208,230,.5)}
+.places button small{display:block;font-weight:500;font-size:11.5px;color:var(--muted);margin-top:2px}
+.sheet .undo{display:block;width:100%;margin-top:12px;color:var(--muted)}
+.inline input[type=text]{flex:1;min-width:0;height:44px;border-radius:10px;border:1px solid var(--line);background:var(--ink);color:var(--text);padding:0 12px;font:500 16px var(--sans)}
+.seg.walks{display:flex;gap:3px;overflow-x:auto;scrollbar-width:none}
+.seg.walks::-webkit-scrollbar{display:none}
+.seg.walks button{flex:1 0 auto;padding:0 12px;white-space:nowrap}
+.seg.walks button.add{flex:0 0 auto;color:var(--raw)}
 
 footer{display:flex;flex-direction:column;gap:10px;background:var(--panel);border-top:1px solid var(--line);
   padding-top:10px;padding-bottom:calc(env(safe-area-inset-bottom,0px) + 12px);
@@ -165,6 +177,10 @@ label.file input{position:absolute;inset:0;opacity:0}
   </div>
   <div id="banner" class="banner" hidden><span id="bannerText"></span><button id="bannerClose" aria-label="Dismiss">×</button></div>
   <div id="toast" class="toast" hidden></div>
+  <button id="btnMark" class="home-btn mark" hidden>
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-6-5.6-6-11a6 6 0 0 1 12 0c0 5.4-6 11-6 11z"/><circle cx="12" cy="10" r="2.2"/></svg>
+    Mark place
+  </button>
   <button id="btnHome" class="home-btn" hidden>
     <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11l8-6 8 6"/><path d="M6 10v9h12v-9"/><path d="M10 19v-5h4v5"/></svg>
     I'm at start
@@ -173,6 +189,7 @@ label.file input{position:absolute;inset:0;opacity:0}
 
 <footer>
   <div class="spark"><canvas id="spark"></canvas><span class="spark-label">Step signal</span><span class="spark-thr" id="sparkThr">threshold 1.2</span></div>
+  <div class="seg walks" id="walkSeg" role="group" aria-label="Map walks"></div>
   <div class="seg" id="viewSeg" role="group" aria-label="Trace view">
     <button data-v="raw"><i class="sw raw"></i>Raw</button>
     <button data-v="straight"><i class="sw straight"></i>Corrected</button>
@@ -210,7 +227,7 @@ label.file input{position:absolute;inset:0;opacity:0}
   <div class="field">
     <div class="row"><label for="thr">Step threshold</label><output id="thrOut">1.2 m/s²</output></div>
     <input type="range" id="thr" min="0.5" max="3" step="0.1">
-    <p class="hint">Watch the step signal strip while walking. Each footstep should cross the dashed line once. Lower it if steps are missed, raise it if one step counts twice.</p>
+    <p class="hint">Watch the step signal strip while walking. Each footstep should cross the dashed line once. While you're walking, the line drops for softer steps (slowing down at a door) when they come on the beat, down to 40% of this setting. Lower it if steps are still missed, raise it if one step counts twice.</p>
   </div>
 
   <h3 class="group">Corrected view</h3>
@@ -238,7 +255,7 @@ label.file input{position:absolute;inset:0;opacity:0}
       <label class="btn small file">Open walk file<input id="importFile" type="file" accept="application/json,.json"></label>
       <button id="demoBtn" class="btn small">Load demo walk</button>
     </div>
-    <p class="hint">Export saves a picture and a .json of the walk; on the Live tab the file holds the map too. Open a .json here to look at it again on any device. A walk you open becomes your map. The demo is a simulated bedroom walk with everyday sensor errors: both sides of the bed (turning round on the spot at one, on a curve at the other), then back out the door. On the Live tab it also has a second, shorter walk tracked on that map.</p>
+    <p class="hint">Export saves a picture and a .json: on the Map tab, all your map walks; on the Live tab, the live walk and the map walks it was on. Open a .json here to look at it again on any device. A single walk you open becomes your map. The demo is a simulated bedroom walk with everyday sensor errors: both sides of the bed (turning round on the spot at one, on a curve at the other), then back out the door. On the Live tab it also has a second, shorter walk tracked on that map.</p>
   </div>
 
   <div class="field tips">
@@ -248,10 +265,21 @@ label.file input{position:absolute;inset:0;opacity:0}
       <li>Start at a spot you can find again, like the door, facing along a wall.</li>
       <li>Walk at a normal, steady pace. Shuffling and very slow steps get missed.</li>
       <li>When you're back at the start, tap I'm at start. The Corrected view closes the loop there.</li>
-      <li>Live: start at S, facing the way you started the map. If your dot drifts off, go back to S and tap I'm at start.</li>
+      <li>Tap Mark place each time you stand in a doorway, and use the same names every walk. Each mark pins the map there. Tapped the wrong name? Mark place › Undo last mark.</li>
+      <li>Walk the map two or three times (Walk 2, Walk 3), each from S. The places are put where the walks agree.</li>
+      <li>Live: start at S, facing the way you started the map, or tap Mark place where you are. If your dot drifts off, tap Mark place at the next door.</li>
       <li>Keep the screen on. iPhone stops sending motion data when it locks or you switch apps.</li>
     </ul>
   </div>
+</section>
+
+<div id="placeBg" class="sheet-bg" hidden></div>
+<section id="placeSheet" class="sheet" hidden aria-label="Mark place">
+  <div class="sheet-head"><h2 id="placeTitle">Where are you?</h2><button id="placeClose" class="btn small">Cancel</button></div>
+  <p class="hint" id="placeHint">Stand in the doorway, then tap its name. Use the same names on every walk.</p>
+  <div class="places" id="placeList"></div>
+  <div class="inline" id="placeNewRow"><input id="placeNew" type="text" placeholder="New place, e.g. Kitchen door" maxlength="40" autocomplete="off" enterkeyhint="done"><button id="placeAdd" class="btn small">Add</button></div>
+  <button id="placeUndo" class="btn small undo" hidden>Undo last mark</button>
 </section>
 
 <script>
@@ -701,7 +729,7 @@ function buildCorrected(hs, w, lens, cfg){
   const base = cfg.base && cfg.base.pts && cfg.base.pts.length ? cfg.base : null;
   const pts = base ? base.pts.map(p => [p[0], p[1]]) : [[0, 0]];
   let B = pts.length - 1;
-  const gaps = new Set();
+  const gaps = new Set(base && base.gaps ? base.gaps : []);           // pieces of a merged map are joined by jumps nobody walked
   if (base && Math.hypot(pts[B][0], pts[B][1]) > 0.05){ pts.push([0, 0]); B++; gaps.add(B); }   // back to its start, not walked
   MAPEND = base ? B : 0; GAP = gaps.size ? gaps : null;
   try { return matchWalk(hs, w, lens, cfg, pts, B); }
@@ -709,7 +737,11 @@ function buildCorrected(hs, w, lens, cfg){
 }
 function matchWalk(hs, w, lens, cfg, pts, B){
   const n = hs.length, events = { uturns: 0, joins: 0 };
-  if (!n) return { pts: [pts[B]], drawn: [pts[B]], events, axis: cfg.fixedAxis ? cfg.fixedAxis.axis : 0, onMap: [] };
+  if (!n){
+    const places = {};
+    for (const m of (w.places || [])) if (m && m.name && m.i === 0) places[m.name] = pts[B].slice();
+    return { pts: [pts[B]], drawn: [pts[B]], events, axis: cfg.fixedAxis ? cfg.fixedAxis.axis : 0, onMap: [], places };
+  }
   const { pivot, startAt: startOwn } = findUturns(hs, w, lens);
   const { H: Hown, axis } = correctHeadings(hs, pivot, cfg, w.steps, cfg.fixedAxis);
   // headings and lengths by point: the map's own segments first (if any), then your steps
@@ -734,6 +766,12 @@ function matchWalk(hs, w, lens, cfg, pts, B){
   const marks = new Set((w.anchors || []).map(a => a.i + B));
   const strength = JOIN[cfg.join] != null ? JOIN[cfg.join] : 1;
   let anchor = B, lastMark = B, fol = null, cand = null;
+  // Places you marked by name. The first mark of a place says where it is; marking it again means you're back there,
+  // so the walk since the last fixed point is spread to meet it (like I'm at start). cfg.placeTargets instead gives
+  // where every place is (agreed between several walks of the same map), and each mark goes there.
+  const placeAt = new Map(), places = {}, freeAt = {}, given = cfg.placeTargets || null;
+  for (const m of (w.places || [])) if (m && m.name && m.i >= 0) placeAt.set(m.i + B, m.name);
+  if (placeAt.has(B)){ places[placeAt.get(B)] = pts[B].slice(); freeAt[placeAt.get(B)] = [0, 0]; }
   const via = [], onMap = [];                      // extra corners to draw before a point; on the saved map?
   const lerp = (arr, s, f) => arr[s - 1] + (arr[s] - arr[s - 1]) * f;
   for (let i = B + 1; i <= B + n; i++){
@@ -857,6 +895,16 @@ function matchWalk(hs, w, lens, cfg, pts, B){
       spread(pts, H, L, anchor, i, p, [0, 0]);
       p = [0, 0]; fol = null; cand = null; fixed = true; inherit = [0, 0]; debt = [0, 0]; lastMark = i;
     }
+    let firstMark = null;
+    if (placeAt.has(i)){                            // you marked a place
+      const nm = placeAt.get(i), tgt = given && given[nm] ? given[nm] : places[nm];
+      if (tgt){
+        spread(pts, H, L, anchor, i, p, tgt);
+        p = tgt.slice(); fol = null; cand = null; fixed = true; debt = [0, 0]; lastMark = i;
+        inherit = freeAt[nm] || null;
+      }
+      if (!places[nm]){ places[nm] = p.slice(); firstMark = nm; }
+    }
     if (cfg.debug) cfg.debug.push({ i, h: Math.round(h / DEG), len: +len.toFixed(2), mode: fol ? 'on:' + fol.s + (fol.dir > 0 ? '+' : '-') + (fol.lost ? 'L' + fol.lost : '') + ' r' + (fol.run || 0).toFixed(1) + ' f' + fol.from : 'free', cand: cand ? cand.n : 0, p: p.map(v => +v.toFixed(2)), jn: jdbg });
     pts.push(p);
     onMap.push(!!(fol && fol.s <= MAPEND && !fol.lost));
@@ -867,17 +915,19 @@ function matchWalk(hs, w, lens, cfg, pts, B){
       fy.push(fy[i - 1] + (fixed ? 0 : len * Math.abs(Math.cos(h - axis))));
     }
     if (fixed) anchor = i;
+    if (firstMark) freeAt[firstMark] = [fx[i], fy[i]];
   }
   const drawn = [pts[B]];
   for (let i = B + 1; i < pts.length; i++){ if (via[i]) drawn.push(...via[i]); drawn.push(pts[i]); }
-  return { pts: B ? pts.slice(B) : pts, drawn, events, axis, onMap };
+  return { pts: B ? pts.slice(B) : pts, drawn, events, axis, onMap, places };
 }
 
 function computePaths(w, cfg){
   const hs = relHeadings(w, cfg.source), lens = stepLengths(w, cfg);
   const c = buildCorrected(hs, w, lens, cfg);
   const amps = w.steps.map(s => s.a).filter(a => a > 0);
-  return { hs, lens, raw: buildPath(hs, lens), straight: c.pts, drawn: c.drawn || c.pts, events: c.events, axis: c.axis, amp: amps.length >= 5 ? median(amps) : 0 };
+  return { hs, lens, raw: buildPath(hs, lens), straight: c.pts, drawn: c.drawn || c.pts, events: c.events, axis: c.axis,
+    places: c.places || {}, amp: amps.length >= 5 ? median(amps) : 0 };
 }
 
 /* Live: where you are on a saved map. You start where the map walk started, facing about the same way (when
@@ -898,6 +948,340 @@ function trackOnMap(map, w, cfg){
   const onMap = c.pts.slice(1).map(p => distToPath(map.pts, p) <= 0.3);
   return { hs, lens, raw: buildPath(hs, lens), straight: c.pts, drawn: c.drawn, events: c.events, rot, onMap };
 }
+/* ---- several walks of the same map, made into one ---- */
+// A point turned by angle r the way headings turn (clockwise): heading h becomes h + r
+const turn = (p, r) => [p[0] * Math.cos(r) + p[1] * Math.sin(r), -p[0] * Math.sin(r) + p[1] * Math.cos(r)];
+function medianPoint(ps){ return ps.length >= 3 ? [median(ps.map(p => p[0])), median(ps.map(p => p[1]))] : [ps.reduce((a, p) => a + p[0], 0) / ps.length, ps.reduce((a, p) => a + p[1], 0) / ps.length]; }
+
+/* Every walk starts at S. Each later walk is turned to line up with the first: the compass says which way it was
+   facing to within a quarter turn, the walls give the exact angle, and when the two walks share places you marked
+   (at least two away from S), whichever quarter turn puts those places together wins.
+   Where each place is comes from every walk at once. Between one mark and the next (S at the start, the places you
+   marked, I'm at start), a walk measures how far and which way it went; all those legs, from all the walks, are
+   fitted together by least squares, short legs counting for more than long ones (their counting error is smaller),
+   and each walk's own stride is fitted as well. So a place reached late in one walk, after a lot of counting, is
+   held in place by the shorter legs of the others, and the loop back to S spreads its error over the whole walk
+   instead of the last stretch. Every walk is then worked out again pinned to those places, and the map is the first
+   walk's path plus whatever the other walks covered that it didn't. Works for one walk too. */
+let LEGVAR = [0.09, 0.03, 0];
+function mergeWalks(walks, cfg){
+  if (cfg.legvar) LEGVAR = cfg.legvar;
+  const ws = walks.filter(w => w && w.steps && w.steps.length >= 3);
+  if (!ws.length) return null;
+  const bare = w => Object.assign({}, w, { places: [], anchors: [] });
+  const runs = ws.map(w => computePaths(bare(w), cfg)), A0 = runs[0].axis;
+  // each walk's marks in time order, where the walk (by its own count, no pinning) was at each
+  const marksOf = (w, r) => {
+    const ms = [{ i: 0, name: '' }];                              // '' is S
+    for (const m of (w.places || [])) if (m && m.name && m.i >= 0 && m.i <= w.steps.length) ms.push({ i: m.i, name: m.name });
+    for (const a of (w.anchors || [])) if (a && a.i > 0 && a.i <= w.steps.length) ms.push({ i: a.i, name: '' });
+    ms.sort((x, y) => x.i - y.i);
+    const cum = [0]; for (let k = 1; k < r.straight.length; k++) cum.push(cum[k - 1] + Math.hypot(r.straight[k][0] - r.straight[k - 1][0], r.straight[k][1] - r.straight[k - 1][1]));
+    return ms.map(m => ({ name: m.name, at: r.straight[m.i], d: cum[m.i], i: m.i }));
+  };
+  const marks = ws.map((w, j) => marksOf(w, runs[j]));
+  const firstAt = ms => { const o = {}; for (const m of ms) if (m.name && !o[m.name]) o[m.name] = m.at; return o; };
+  const rots = runs.map((r, j) => {
+    if (!j) return 0;
+    let q = 0;
+    if (ws[j].refC != null && ws[0].refC != null) q = Math.round(wrap(ws[j].refC - ws[0].refC) / Q) * Q;
+    let rot = wrap(q + wrap(4 * (A0 - r.axis - q)) / 4);
+    const mine = firstAt(marks[j]), base = firstAt(marks[0]);
+    const shared = Object.keys(mine).filter(nm => base[nm] && Math.hypot(...base[nm]) > 1.5);
+    if (shared.length >= 2){
+      const misfit = a => shared.reduce((e, nm) => { const p = turn(mine[nm], a), b = base[nm]; return e + (p[0] - b[0]) ** 2 + (p[1] - b[1]) ** 2; }, 0);
+      let best = rot, bm = misfit(rot);
+      for (const k of [1, 2, 3]){ const a2 = wrap(rot + k * Q), m = misfit(a2); if (m < 0.5 * bm){ best = a2; bm = m; } }
+      rot = best;
+    }
+    return rot;
+  });
+  // the legs, turned into the first walk's frame, and where the places are by least squares over all of them
+  const fit = marks => {
+  const legs = [];
+  marks.forEach((ms, j) => { for (let k = 1; k < ms.length; k++){
+    const a = ms[k - 1], b = ms[k], len = b.d - a.d;
+    if (a.name === b.name && len < 0.3) continue;
+    // counting error on a leg: a step or so either way where you slowed down at its ends, plus a little per metre
+    legs.push({ j, a: a.name, b: b.name, v: turn([b.at[0] - a.at[0], b.at[1] - a.at[1]], rots[j]), w: 1 / (LEGVAR[0] + LEGVAR[1] * len) });
+  } });
+  const names = [...new Set(legs.flatMap(l => [l.a, l.b]).filter(Boolean))], idx = new Map(names.map((nm, k) => [nm, k]));
+  const solve = sc => {                                           // weighted least squares, S fixed at the origin
+    const m = names.length, A = Array.from({ length: m }, () => new Array(m).fill(0)), bx = new Array(m).fill(0), by = new Array(m).fill(0);
+    for (const l of legs){
+      const ia = l.a ? idx.get(l.a) : -1, ib = l.b ? idx.get(l.b) : -1, vx = l.v[0] * sc[l.j], vy = l.v[1] * sc[l.j];
+      const lw = l.w * (l.r || 1);
+      if (ib >= 0){ A[ib][ib] += lw; bx[ib] += lw * vx; by[ib] += lw * vy; }
+      if (ia >= 0){ A[ia][ia] += lw; bx[ia] -= lw * vx; by[ia] -= lw * vy; }
+      if (ia >= 0 && ib >= 0){ A[ia][ib] -= lw; A[ib][ia] -= lw; }
+    }
+    for (let k = 0; k < m; k++) A[k][k] += 1e-6;
+    const sol = (M, v) => {                                       // Gaussian elimination with partial pivoting
+      M = M.map(r => r.slice()); v = v.slice();
+      for (let c = 0; c < m; c++){
+        let p = c; for (let r = c + 1; r < m; r++) if (Math.abs(M[r][c]) > Math.abs(M[p][c])) p = r;
+        [M[c], M[p]] = [M[p], M[c]]; [v[c], v[p]] = [v[p], v[c]];
+        for (let r = c + 1; r < m; r++){ const f = M[r][c] / M[c][c]; if (!f) continue; for (let k = c; k < m; k++) M[r][k] -= f * M[c][k]; v[r] -= f * v[c]; }
+      }
+      const x = new Array(m).fill(0);
+      for (let r = m - 1; r >= 0; r--){ let t = v[r]; for (let k = r + 1; k < m; k++) t -= M[r][k] * x[k]; x[r] = t / M[r][r]; }
+      return x;
+    };
+    const X = sol(A, bx), Y = sol(A, by), out = {};
+    names.forEach((nm, k) => { out[nm] = [X[k], Y[k]]; });
+    return out;
+  };
+  const posOf = (P, nm) => nm ? P[nm] : [0, 0];
+  let sc = ws.map(() => 1), places = solve(sc);
+  // A leg that disagrees with the rest by much more than counting error (steps missed on it) can count for less, and
+  // each walk's stride can be fitted against the others' (both off: on the test house neither helped)
+  for (let it = 0; it < 4 && (LEGVAR[2] || cfg.fitStride); it++){
+    if (ws.length > 1 && LEGVAR[2]) for (const l of legs){
+      const pa = posOf(places, l.a), pb = posOf(places, l.b), e = Math.hypot(pb[0] - pa[0] - l.v[0] * sc[l.j], pb[1] - pa[1] - l.v[1] * sc[l.j]);
+      l.r = 1 / (1 + (e / LEGVAR[2]) ** 2);
+    }
+    if (ws.length > 1 && cfg.fitStride){
+      sc = ws.map((w, j) => {
+        let num = 0, den = 0;
+        for (const l of legs) if (l.j === j){ const pa = posOf(places, l.a), pb = posOf(places, l.b), dx = pb[0] - pa[0], dy = pb[1] - pa[1], lw = l.w * (l.r || 1); num += lw * (l.v[0] * dx + l.v[1] * dy); den += lw * (l.v[0] ** 2 + l.v[1] ** 2); }
+        return den > 0 ? Math.min(1.2, Math.max(0.83, num / den)) : 1;
+      });
+      const mean = sc.reduce((x, y) => x + y, 0) / sc.length; sc = sc.map(x => x / mean);   // keep the walks' average stride
+    }
+    places = solve(sc);
+  }
+  return { places, sc, names };
+  };
+  let F = fit(marks);
+  /* A wrong name tapped (at the study door, Kitchen door) would pull that place towards where it isn't, and bend every
+     walk to it. Each mark is checked against the rest: worked out without it, where do the walk's legs on either side
+     put that spot? A wrong name puts it far from its place by both legs at once (missed steps on one leg only move
+     one of them), and close to another place you named, or S: the one you meant. The worst such mark is left out and
+     everything fitted again, a few times at most. Only for names marked at least three times, so the rest can outvote
+     it. (On the test house: none of 810 right marks left out; 4 in 5 wrong ones caught, the rest a metre or so off.) */
+  const dropped = [];
+  for (let round = 0; round < 3 && !cfg.keepMarks; round++){
+    const count = {};
+    for (const ms of marks) for (const m of ms) if (m.name) count[m.name] = (count[m.name] || 0) + 1;
+    let worst = null;
+    marks.forEach((ms, j) => { for (let k = 1; k < ms.length - 1; k++){
+      const m = ms[k], pa = ms[k - 1], pb = ms[k + 1];
+      if (!m.name || count[m.name] < 3) continue;
+      const G = fit(marks.map((x, jj) => jj === j ? x.filter((_, kk) => kk !== k) : x));
+      const P0 = G.places[m.name], A = pa.name ? G.places[pa.name] : [0, 0], B = pb.name ? G.places[pb.name] : [0, 0], s = G.sc[j];
+      if (!P0 || !A || !B) continue;
+      const va = turn([m.at[0] - pa.at[0], m.at[1] - pa.at[1]], rots[j]), vb = turn([pb.at[0] - m.at[0], pb.at[1] - m.at[1]], rots[j]);
+      const p1 = [A[0] + va[0] * s, A[1] + va[1] * s], p2 = [B[0] - vb[0] * s, B[1] - vb[1] * s];
+      const e1 = Math.hypot(p1[0] - P0[0], p1[1] - P0[1]), e2 = Math.hypot(p2[0] - P0[0], p2[1] - P0[1]);
+      const wa = 1 / (LEGVAR[0] + LEGVAR[1] * (m.d - pa.d)), wb = 1 / (LEGVAR[0] + LEGVAR[1] * (pb.d - m.d));
+      const at = [(wa * p1[0] + wb * p2[0]) / (wa + wb), (wa * p1[1] + wb * p2[1]) / (wa + wb)], off = Math.hypot(at[0] - P0[0], at[1] - P0[1]);
+      let near = Math.hypot(at[0], at[1]), meant = 'S';
+      for (const nm of G.names) if (nm !== m.name){ const d = Math.hypot(at[0] - G.places[nm][0], at[1] - G.places[nm][1]); if (d < near){ near = d; meant = nm; } }
+      if (off > 1.5 && Math.min(e1, e2) > 1 && near < 0.5 * off && (!worst || off > worst.off)) worst = { j, k, off, meant };
+    } });
+    if (!worst) break;
+    const m = marks[worst.j][worst.k];
+    dropped.push({ j: worst.j, i: m.i, name: m.name, off: worst.off, meant: worst.meant });
+    marks[worst.j] = marks[worst.j].filter((_, kk) => kk !== worst.k);
+    F = fit(marks);
+  }
+  const places = F.places, sc = F.sc, names = F.names;
+  // each walk again, its marks pinned to those places (turned back into the walk's own frame)
+  const pinned = ws.map((w, j) => {
+    const own = {}, gone = dropped.filter(d => d.j === j);
+    for (const nm of names) own[nm] = turn(places[nm], -rots[j]);
+    const wj = gone.length ? Object.assign({}, w, { places: w.places.filter(p => !gone.some(d => d.i === p.i && d.name === p.name)) }) : w;
+    const r = computePaths(wj, Object.assign({}, cfg, { placeTargets: own }));
+    return { drawn: r.drawn.map(p => turn(p, rots[j])), straight: r.straight.map(p => turn(p, rots[j])), axis: wrap(r.axis + rots[j]) };
+  });
+  // the map: the first walk's path, plus the stretches of the others it doesn't already cover
+  const lines = [pinned[0].drawn], COS = Math.cos(35 * DEG);
+  const covered = (a, b) => {
+    const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2, vx = b[0] - a[0], vy = b[1] - a[1], vl = Math.hypot(vx, vy);
+    for (const ln of lines) for (let k = 1; k < ln.length; k++){
+      const c = ln[k - 1], d = ln[k], ux = d[0] - c[0], uy = d[1] - c[1], ul = Math.hypot(ux, uy);
+      if (ul < 0.05) continue;
+      if (vl > 0.05 && Math.abs(ux * vx + uy * vy) / (ul * vl) < COS) continue;
+      const t = Math.max(0, Math.min(1, ((mx - c[0]) * ux + (my - c[1]) * uy) / (ul * ul)));
+      if (Math.hypot(mx - c[0] - ux * t, my - c[1] - uy * t) < (cfg.coverTol || 1)) return true;   // closer than that it's the same path
+    }
+    return false;
+  };
+  for (let j = 1; j < pinned.length; j++){
+    const d = pinned[j].drawn, cov = [];
+    for (let k = 1; k < d.length; k++) cov.push(Math.hypot(d[k][0] - d[k - 1][0], d[k][1] - d[k - 1][1]) < 0.05 ? null : covered(d[k - 1], d[k]));
+    let k = 0;
+    while (k < cov.length){
+      if (cov[k] !== false){ k++; continue; }
+      let e = k, len = 0;
+      while (e < cov.length && cov[e] !== true){ len += Math.hypot(d[e + 1][0] - d[e][0], d[e + 1][1] - d[e][1]); e++; }
+      if (len >= 0.8) lines.push(d.slice(Math.max(0, k - 1), Math.min(d.length, e + 2)));   // with a covered step at each end, to join on
+      k = e;
+    }
+  }
+  // as one point list for drawing, with the joins between pieces marked as not walkable
+  const pts = [], gaps = new Set();
+  for (const ln of lines){ if (pts.length) gaps.add(pts.length); for (const p of ln) pts.push(p.slice()); }
+  const amps = ws.flatMap(w => w.steps.map(s => s.a)).filter(a => a > 0);
+  return { lines, pts, gaps, axis: A0, refC: ws[0].refC, amp: amps.length >= 5 ? median(amps) : 0, places, walks: pinned, rots, scales: sc, dropped };
+}
+
+/* ---- walking on a saved map, on rails ---- */
+/* The map's lines are the only places you can be. Many guesses of where you are, each with its own idea of how long
+   your steps really are, are walked along the lines with your steps; any step may have been missed or counted twice.
+   Each guess stays on its line, or moves onto one that runs your way within reach (at a junction or a bend), as long
+   as the way there is on the map too. Where nothing runs your way (turning where the map has no turning), the guess
+   waits at the end of its line and counts for less. The guesses that keep fitting the map win, so a turn shows which
+   junction you're at even if the step count was off getting there. Your trail is the history of the best guess, so
+   it only ever runs along the map. map = { lines | pts + gaps, axis, refC, amp, places }. */
+function railIndex(map){                                       // the map as segments, in a grid of 1 m cells
+  if (map._rail) return map._rail;
+  const lines = map.lines || (() => { const out = []; let cur = []; (map.pts || []).forEach((p, k) => { if (map.gaps && map.gaps.has(k)){ out.push(cur); cur = []; } cur.push(p); }); out.push(cur); return out; })();
+  const SG = [];
+  for (const ln of lines) for (let k = 1; k < ln.length; k++){
+    const a = ln[k - 1], b = ln[k], l = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (l >= 0.05) SG.push([a[0], a[1], b[0], b[1], (b[0] - a[0]) / l, (b[1] - a[1]) / l, l]);
+  }
+  const grid = new Map(), key = (i, j) => i * 100003 + j;
+  SG.forEach((g, s) => {
+    for (let i = Math.floor(Math.min(g[0], g[2]) - 1); i <= Math.floor(Math.max(g[0], g[2]) + 1); i++)
+      for (let j = Math.floor(Math.min(g[1], g[3]) - 1); j <= Math.floor(Math.max(g[1], g[3]) + 1); j++){
+        const k = key(i, j); if (!grid.has(k)) grid.set(k, []); grid.get(k).push(s);
+      }
+  });
+  Object.defineProperty(map, '_rail', { value: { SG, grid, key }, enumerable: false, configurable: true });
+  return map._rail;
+}
+function railTrack(map, w, cfg, cache){
+  const lens = stepLengths(w, Object.assign({}, cfg, map.amp > 0 ? { ampRef: map.amp } : {}));
+  const hs0 = relHeadings(w, cfg.source), n = hs0.length;
+  let q = 0;
+  if (w.refC != null && map.refC != null) q = Math.round(wrap(w.refC - map.refC) / Q) * Q;
+  const ut0 = findUturns(hs0, w, lens);
+  const est = n >= 3 ? wallAxis(hs0, ut0.pivot, w.steps) : null;
+  const rot = est ? wrap(q + wrap(4 * (map.axis - est.axis - q)) / 4) : q;
+  const hs = hs0.map(h => wrap(h + rot)), { pivot, startAt } = findUturns(hs, w, lens);
+  const H = correctHeadings(hs, pivot, cfg, w.steps, { axis: map.axis, rate: est ? est.rate : 0 }).H;
+  const Lz = lens.map((l, k) => pivot.has(k) ? 0 : l);
+  const { SG, grid, key } = railIndex(map);
+  const raw = buildPath(hs, lens), events = { uturns: startAt.size, joins: 0 };
+  if (!SG.length || !n) return { hs, lens, raw, straight: [[0, 0]].concat(raw.slice(1)), drawn: raw, events, rot, onMap: [] };
+  const RP = Object.assign({ miss: 0.08, dbl: 0.02, sig: 0.35, head: 5, R: 0.9, wait: 0.1, waitSig: 0.7, scale: 0.07, n: 300, end: 0.5 }, cfg.rail || {});
+  const near = (x, y) => grid.get(key(Math.floor(x), Math.floor(y))) || [];
+  const onSeg = (s, x, y) => { const g = SG[s], t = Math.max(0, Math.min(g[6], (x - g[0]) * g[4] + (y - g[1]) * g[5])); return [g[0] + g[4] * t, g[1] + g[5] * t]; };
+  // the nearest line within R of (x, y): running your way (ux, uy) if asked, and then beside it, not out past its end
+  // (past a dead end there's nowhere to go: that's waiting, below)
+  const nearest = (x, y, ux, uy, R, COS) => {
+    let best = null, bd = R;
+    for (const s of near(x, y)){
+      const g = SG[s];
+      if (COS){
+        if (Math.abs(g[4] * ux + g[5] * uy) < COS) continue;
+        const t = (x - g[0]) * g[4] + (y - g[1]) * g[5];
+        if (t < -RP.end || t > g[6] + RP.end) continue;
+      }
+      const qq = onSeg(s, x, y), d = Math.hypot(x - qq[0], y - qq[1]);
+      if (d < bd){ bd = d; best = { s, x: qq[0], y: qq[1], d }; }
+    }
+    return best;
+  };
+  const COS = Math.cos(40 * DEG), SIG = RP.sig, N = RP.n;
+  // Each step has its own seeded randomness, so the same walk always gives the same answer, and a walk that grows by a
+  // step can carry on from where the last answer left off (cache) instead of starting again
+  let rnd = null;
+  const seedRnd = k => { rnd = mulberry32(20261015 + k * 7919); };
+  const gauss = () => { let u = 0; while (!u) u = rnd(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(TAU * rnd()); };
+  const markAt = new Map();
+  for (const m of (w.places || [])) if (m && m.name && map.places && map.places[m.name]) markAt.set(m.i, map.places[m.name]);
+  for (const a of (w.anchors || [])) if (a && a.i > 0) markAt.set(a.i, [0, 0]);
+  let X = new Float64Array(N), Y = new Float64Array(N), SC = new Float64Array(N), DT = new Float64Array(N), W = new Float64Array(N), SEGI = new Int32Array(N);
+  const place = (at, keep) => {                                   // everyone to a spot on the map (start, a place you marked)
+    const r0 = nearest(at[0], at[1], 0, 0, 3, 0);
+    for (let j = 0; j < N; j++){
+      X[j] = r0 ? r0.x : at[0]; Y[j] = r0 ? r0.y : at[1]; SEGI[j] = r0 ? r0.s : -1; W[j] = 1 / N;
+      if (!keep){ SC[j] = Math.min(1.25, Math.max(0.8, 1 + gauss() * RP.scale)); DT[j] = gauss() * 1.5 * DEG; }
+    }
+  };
+  // carry on from a cached run of the same map and the same walk so far (everything up to where the inputs differ)
+  const st0 = markAt.get(0) || [0, 0], sig = [map, N, st0[0], st0[1], cfg.source, cfg.stride, cfg.snap].join('|');
+  let k0 = 0, ST = [];
+  if (cache && cache.sig === sig && cache.map === map){
+    const same = (a, b) => Math.abs(a - b) < 1e-9;
+    while (k0 < cache.ST.length && k0 < n && same(cache.H[k0], H[k0]) && same(cache.L[k0], Lz[k0]) && (cache.M[k0] || '') === String(markAt.get(k0 + 1) || '')) k0++;
+    ST = cache.ST.slice(0, k0);
+  }
+  if (k0 > 0){ const p = ST[k0 - 1]; X = Float64Array.from(p.X); Y = Float64Array.from(p.Y); SC = Float64Array.from(p.SC); DT = Float64Array.from(p.DT); W = Float64Array.from(p.W); SEGI = Int32Array.from(p.SG); }
+  else { seedRnd(-1); place(st0, false); }
+  const start = (() => { const r0 = nearest(st0[0], st0[1], 0, 0, 3, 0); return r0 ? [r0.x, r0.y] : st0.slice(); })();
+  for (let k = k0; k < n; k++){
+    seedRnd(k);
+    const anc = new Int32Array(N), off = new Uint8Array(N);
+    for (let j = 0; j < N; j++) anc[j] = j;
+    const L = Lz[k];
+    if (L > 0){
+      for (let j = 0; j < N; j++){
+        DT[j] += gauss() * 0.2 * DEG;
+        const u = rnd();
+        let l = L * SC[j] * (1 + gauss() * 0.06);
+        if (u < RP.miss) l *= 2; else if (u < RP.miss + RP.dbl) continue;   // a step missed / one counted twice
+        const th = H[k] + DT[j] + gauss() * RP.head * DEG, mx = Math.sin(th), my = Math.cos(th);
+        const px = X[j] + mx * l, py = Y[j] + my * l;
+        let r = nearest(px, py, mx, my, RP.R, COS);
+        if (r && Math.hypot(r.x - X[j], r.y - Y[j]) > l + 0.5) r = null;          // no further than the step could take you
+        if (r){ const m = nearest((X[j] + r.x) / 2, (Y[j] + r.y) / 2, 0, 0, 0.35, 0); if (!m) r = null; }   // and not across a gap
+        if (r){ X[j] = r.x; Y[j] = r.y; SEGI[j] = r.s; W[j] *= Math.exp(-r.d * r.d / (2 * SIG * SIG)); }
+        else {
+          const e = SEGI[j] >= 0 ? onSeg(SEGI[j], px, py) : [X[j], Y[j]], d = Math.hypot(px - e[0], py - e[1]);
+          X[j] = e[0]; Y[j] = e[1]; W[j] *= RP.wait * Math.exp(-d * d / (2 * RP.waitSig * RP.waitSig)); off[j] = 1;
+        }
+      }
+      let sum = 0; for (let j = 0; j < N; j++) sum += W[j];
+      if (!(sum > 1e-300)){ for (let j = 0; j < N; j++) W[j] = 1 / N; sum = 1; }
+      let ss = 0; for (let j = 0; j < N; j++){ W[j] /= sum; ss += W[j] * W[j]; }
+      if (1 / ss < N / 2){                                        // keep the guesses that fit, drop the rest
+        const nx = new Float64Array(N), ny = new Float64Array(N), ns = new Float64Array(N), nd = new Float64Array(N), ng = new Int32Array(N), no = new Uint8Array(N);
+        let c = W[0], i = 0; const u0 = rnd() / N;
+        for (let j = 0; j < N; j++){
+          const uu = u0 + j / N;
+          while (uu > c && i < N - 1){ i++; c += W[i]; }
+          nx[j] = X[i]; ny[j] = Y[i]; ng[j] = SEGI[i]; no[j] = off[i]; anc[j] = i;
+          ns[j] = Math.min(1.3, Math.max(0.75, SC[i] * (1 + gauss() * 0.01))); nd[j] = DT[i] + gauss() * 0.3 * DEG;
+        }
+        X = nx; Y = ny; SC = ns; DT = nd; SEGI = ng; off.set(no); W.fill(1 / N);
+      }
+    }
+    if (markAt.has(k + 1)) place(markAt.get(k + 1), true);       // you said where you are
+    ST[k] = { X: Float64Array.from(X), Y: Float64Array.from(Y), SC: Float64Array.from(SC), DT: Float64Array.from(DT), W: Float64Array.from(W), SG: Int32Array.from(SEGI), A: anc, OFF: off };
+  }
+  if (cache){ cache.sig = sig; cache.map = map; cache.ST = ST; cache.H = H.slice(); cache.L = Lz.slice(); cache.M = Array.from({ length: n }, (_, k) => String(markAt.get(k + 1) || '')); }
+  // the best guess: the one with the most weight around it
+  const last = ST[n - 1];
+  let bj = 0, bw = -1;
+  for (let j = 0; j < N; j++){
+    let m = 0;
+    for (let i = 0; i < N; i++) if (Math.abs(last.X[i] - last.X[j]) < 0.7 && Math.abs(last.Y[i] - last.Y[j]) < 0.7) m += last.W[i];
+    if (m > bw){ bw = m; bj = j; }
+  }
+  const straight = new Array(n + 1), onMap = new Array(n), segOf = new Array(n + 1);
+  for (let k = n - 1, j = bj; k >= 0; k--){ straight[k + 1] = [ST[k].X[j], ST[k].Y[j]]; onMap[k] = !ST[k].OFF[j]; segOf[k + 1] = ST[k].SG[j]; j = ST[k].A[j]; }
+  straight[0] = start; segOf[0] = -1;
+  // draw turns through the map's corner, not across it; where you said where you are, the trail jumps (a gap, null)
+  const drawn = [straight[0]];
+  for (let k = 1; k <= n; k++){
+    if (markAt.has(k)){ drawn.push(null, straight[k]); continue; }
+    const a = segOf[k - 1], b = segOf[k];
+    if (a >= 0 && b >= 0 && a !== b){
+      const A = SG[a], Bq = SG[b];
+      for (const v of [[A[2], A[3]], [A[0], A[1]]]) if (Math.hypot(v[0] - Bq[0], v[1] - Bq[1]) < 0.05 || Math.hypot(v[0] - Bq[2], v[1] - Bq[3]) < 0.05){
+        if (Math.hypot(v[0] - straight[k][0], v[1] - straight[k][1]) < 1.5) drawn.push(v);
+        break;
+      }
+    }
+    drawn.push(straight[k]);
+  }
+  return { hs, lens, raw, straight, drawn, events, rot, onMap };
+}
+
 function distToPath(pts, p){
   let best = Infinity;
   for (let k = 1; k < pts.length; k++){
@@ -916,7 +1300,7 @@ function simulateWalk(plan, seed, opts){
   const o = Object.assign({ drift: 0.25, stride: 0.68 }, opts || {});
   const rnd = mulberry32(seed || 7), N = () => (rnd() + rnd() + rnd() + rnd() - 2) * 1.732;
   const gy = (deg, tt) => (deg + o.drift * tt / 1000) * DEG;
-  const steps = [], trace = [], truth = [[0, 0]];
+  const steps = [], trace = [], truth = [[0, 0]], places = [], marked = [];
   let t = 0, ts = 0, head = 0, x = 0, y = 0;
   const move = (dur, h1) => {
     const t0 = t, h0 = head;
@@ -948,6 +1332,7 @@ function simulateWalk(plan, seed, opts){
     // stop, turn sideways and look for a moment (one soft shuffle), then finish turning round
     if (op[0] === 'pause'){ const sgn = op[1] || 1; move(300, head + 90 * sgn); rec(0.6, 6); move(op[2] || 1000, head); move(300, head + 90 * sgn); return; }
     if (op[0] === 'wait'){ move(op[1] || 1500, head); return; }
+    if (op[0] === 'mark'){ places.push({ i: steps.length, name: op[1] }); marked.push({ name: op[1], at: [x, y] }); return; }
     let [deg, m, miss] = op;
     const turn = turnOf(head, deg);
     if (cuts(k)){
@@ -967,11 +1352,12 @@ function simulateWalk(plan, seed, opts){
       const len = m / n * (1 + N() * 0.05);
       move(520 + N() * 30, head);
       x += Math.sin(deg * DEG) * len; y += Math.cos(deg * DEG) * len;
-      if (q !== miss && !(o.miss && rnd() < o.miss)) rec(2 * Math.pow(len / o.stride, 4) * (1 + N() * 0.06), 3);
+      const slow = o.missEnds && (q === 0 || q === n - 1) && rnd() < o.missEnds;   // slowing down at a door or corner
+      if (q !== miss && !slow && !(o.miss && rnd() < o.miss)) rec(2 * Math.pow(len / o.stride, 4) * (1 + N() * 0.06), 3);
       if (o.dbl && rnd() < o.dbl) rec(1.2, 6);   // one step counted twice
     }
   });
-  return { steps, trace, truth, refG: 0, refC: 0.5, elapsedMs: Math.round(t), anchors: [] };
+  return { steps, trace, truth, refG: 0, refC: 0.5, elapsedMs: Math.round(t), anchors: [], places, marked };
 }
 // Door at the start. Up to the foot of the bed, along one side to the headboard, turn around, back,
 // across the foot (one step missed), up the other side, turn around, back, and out to the door.
@@ -990,21 +1376,26 @@ const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).
 const COL = { ink: css('--ink'), line: css('--line'), raw: css('--raw'), straight: css('--straight'), rec: css('--rec'), muted: css('--muted'), text: css('--text') };
 
 /* ---------- state ---------- */
-// A walk: what one tab records. The Map tab's walk is your map; the Live tab's is you walking on it.
+// A walk: one recording. The Map tab holds the walks that make your map (one or more, each from S); the Live tab
+// holds you walking on it. The walk on screen is the one being recorded into; its fields live on S.
 const blankWalk = () => ({
   steps:[],            // {t: ms since walk start, g: gyro heading (rad, clockwise), c: compass heading or null, a: step bounce}
   trace:[],            // [t, gyro heading, strongest bounce, strongest upward bounce] about 10 times a second while recording
   anchors:[],          // {i: step count} when you tapped I'm at start
+  places:[],           // {i: step count, name} when you marked a place
   refG:null, refC:null,
   walkStart:0, elapsed:0, lastTraceT:-1e9,
   seen:{ uturns:0, joins:0 }
 });
 const WALK = Object.keys(blankWalk());
+const MAXWALKS = 5;
 const S = {
   permitted:false, sensorsSeen:false, recording:false,
   mode: store.get('mode', 'map') === 'live' ? 'live' : 'map',
-  ...blankWalk(),      // the open tab's walk
-  other: blankWalk(),  // the other tab's walk
+  ...blankWalk(),      // the walk on screen
+  maps:[blankWalk()],  // the map walks (the selected one is on S while the Map tab is open)
+  sel:0,               // which map walk is selected
+  live:blankWalk(),    // the live walk (on S while the Live tab is open)
   segStart:0,
   stride: store.get('stride', 0.70),
   thr: store.get('thr', 1.2),
@@ -1015,17 +1406,23 @@ const S = {
   join: store.get('join', 'normal'),
   liveG:null, liveC:null, beta:0, gamma:0,
   accG:{s:0,c:0,n:0}, accC:{s:0,c:0,n:0},
-  gEst:9.81, sig:0, sMax:-Infinity, sMin:Infinity, bMax:0, uMax:0, inPeak:false, peakT:0, peakV:0, lastStepT:0,
+  gEst:9.81, sig:0, sMax:-Infinity, sMin:Infinity, bMax:0, uMax:0, inPeak:false, peakT:0, peakV:0, peakBar:0, lastStepT:0,
+  peaks:[], beats:[],  // your last steps' peak bounce and times, for the step bar
   spark:[], stepFlash:0,
   cache:{ hs:[], lens:[], raw:[[0,0]], straight:[[0,0]], events:{ uturns:0, joins:0 } },
-  mapCache:null,       // the map as drawn, from the Map tab's walk
-  offMap:false         // Live: your last steps aren't on the map
+  merged:null,         // the map, from all the map walks
+  railCache:{},        // the live tracker's work so far, so each step only adds a little
+  dropSeen:null,       // marks the map left out as wrong taps, already told about
+  offMap:false,        // Live: your last steps don't fit the map
+  markI:0              // the step count when you opened Mark place
 };
 if (!(S.join in JOIN)) S.join = 'normal';
 const takeWalk = () => { const o = {}; for (const k of WALK) o[k] = S[k]; return o; };
 const putWalk = o => { for (const k of WALK) S[k] = o[k]; };
-const mapW = () => S.mode === 'map' ? S : S.other;
-const hasMap = () => mapW().steps.length >= 5;
+const stash = () => { if (S.mode === 'map') S.maps[S.sel] = takeWalk(); else S.live = takeWalk(); };
+// the map walks as they are right now (the selected one straight from S while it's on screen)
+const mapWalks = () => S.maps.map((w, i) => S.mode === 'map' && i === S.sel ? takeWalk() : w);
+const hasMap = () => mapWalks().some(w => w.steps.length >= 5);
 
 /* ---------- sensors ---------- */
 async function ensureSensors(){
@@ -1092,18 +1489,31 @@ function onMotion(e){
   }
 }
 
+// Your step time: the middle of your last few gaps between steps
+const beat = () => { const g = []; for (let k = 1; k < S.beats.length; k++) if (S.beats[k] - S.beats[k - 1] < 1500) g.push(S.beats[k] - S.beats[k - 1]); return g.length >= 3 ? median(g) : 600; };
+// The bar a bounce has to clear to count as a step. From standing still it's the threshold setting. While you're
+// walking it follows how hard you're stepping: 45% of your recent steps' bounce, down to 40% of the setting, so the
+// softer steps you take slowing down at a door still count when they come on the beat.
+function stepBar(t){
+  const T = beat();
+  if (t - S.lastStepT > Math.max(1500, 2.2 * T) || S.peaks.length < 4) return S.thr;
+  return Math.max(0.4 * S.thr, Math.min(S.thr, 0.45 * median(S.peaks)));
+}
 function detect(t){
   const v = S.sig;
   if (!S.inPeak){
-    if (v > S.thr && t - S.lastStepT > 280){ S.inPeak = true; S.peakV = v; S.peakT = t; }
+    // a second peak sooner than half your step time is the same footfall
+    if (t - S.lastStepT > Math.max(280, 0.5 * beat())){ const bar = stepBar(t); if (v > bar){ S.inPeak = true; S.peakV = v; S.peakT = t; S.peakBar = bar; } }
   } else {
     if (v > S.peakV){ S.peakV = v; S.peakT = t; }
-    if (v < S.thr * 0.35 || t - S.peakT > 400){ S.inPeak = false; registerStep(S.peakT); }
+    if (v < S.peakBar * 0.35 || t - S.peakT > 400){ S.inPeak = false; registerStep(S.peakT); }
   }
 }
 
 function registerStep(t){
   S.lastStepT = t;
+  S.peaks.push(S.peakV); if (S.peaks.length > 6) S.peaks.shift();
+  S.beats.push(t); if (S.beats.length > 7) S.beats.shift();
   // Average heading over the stride, unless you were turning during it (headings spread out).
   // Averaging a turn-around gives a sideways step, so use where you ended up facing instead.
   const pick = (a, live) => {
@@ -1121,24 +1531,68 @@ function registerStep(t){
 }
 
 /* ---------- paths ---------- */
-// The map, as the Map tab draws it. Worked out again only when that walk or a setting changes.
+const walkKey = w => [w.steps.length, w.anchors.length, w.places.map(p => p.i + p.name).join('/'), w.steps.length ? w.steps[w.steps.length - 1].t : 0].join(':');
+// The map, from all the map walks. Worked out again when a walk or a setting changes; not on every step of the walk
+// you're recording (only when you mark a place there), since it works every walk out twice.
 function mapPaths(){
-  const w = mapW(), n = w.steps.length;
-  const key = [n, w.anchors.length, n ? w.steps[n - 1].t : 0, n ? w.steps[0].g : 0, S.stride, S.adaptive, S.snap, S.join, S.source].join();
-  if (!S.mapCache || S.mapCache.key !== key) S.mapCache = { key, ...computePaths(w, S) };
-  return S.mapCache;
+  const ws = mapWalks(), rec = S.recording && S.mode === 'map';
+  const key = ws.map((w, i) => rec && i === S.sel ? 'rec:' + w.places.length + ':' + w.anchors.length : walkKey(w)).join('|') + '|' + [S.stride, S.adaptive, S.snap, S.join, S.source].join();
+  if (S.merged && S.merged.key === key) return S.merged;
+  const idx = [], use = [];
+  ws.forEach((w, i) => { if (w.steps.length >= 3){ idx.push(i); use.push(w); } });
+  const m = use.length ? mergeWalks(use, S) : null;
+  const gone = (m && m.dropped || []).map(d => Object.assign({ w: idx[d.j] }, d));
+  S.merged = m ? Object.assign(m, { key, idx, gone }) : { key, idx, gone, lines:[], pts:[], gaps:new Set(), places:{}, walks:[], rots:[], axis:0 };
+  S.railCache = {};
+  // a mark that doesn't fit the other walks but sits right by another place: say so once, when it first shows up
+  const id = d => d.w + ':' + d.i + ':' + d.name;
+  if (S.dropSeen){
+    const fresh = gone.filter(d => !S.dropSeen.has(id(d)));
+    if (fresh.length){ const d = fresh[0]; banner('Walk ' + (d.w + 1) + ', step ' + d.i + ': “' + d.name + '” looks like a wrong tap (you were by ' + d.meant + '), so the map leaves that mark out.' + (fresh.length > 1 ? ' ' + (fresh.length - 1) + ' more like it.' : '')); }
+  }
+  S.dropSeen = new Set([...(S.dropSeen || []), ...gone.map(id)]);
+  return S.merged;
 }
+// this map walk's marks, without any the map left out as wrong taps
+function keptMarks(w, i){
+  const g = (S.merged && S.merged.gone || []).filter(d => d.w === i);
+  return g.length ? Object.assign({}, w, { places: w.places.filter(p => !g.some(d => d.i === p.i && d.name === p.name)) }) : w;
+}
+// How a map walk sits on the first walk's frame: the merge says, or (while you're recording it) the compass for the
+// quarter turn and the walls for the exact angle
+function rotOf(i, axis){
+  if (!i) return 0;
+  const m = S.merged, k = m && m.idx ? m.idx.indexOf(i) : -1;
+  if (k >= 0 && !(S.recording && S.mode === 'map' && i === S.sel)) return m.rots[k];
+  const w0 = S.maps[0], w = i === S.sel && S.mode === 'map' ? S : S.maps[i];
+  let q = 0;
+  if (w.refC != null && w0.refC != null) q = Math.round(wrap(w.refC - w0.refC) / (Math.PI / 2)) * (Math.PI / 2);
+  const A0 = m && m.walks.length ? m.axis : axis;
+  return wrap(q + wrap(4 * (A0 - axis - q)) / 4);
+}
+const turned = (c, r) => !r ? c : Object.assign({}, c, { raw: c.raw.map(p => turn(p, r)), straight: c.straight.map(p => turn(p, r)), drawn: (c.drawn || c.straight).map(p => turn(p, r)), rot: r });
 // On the Live tab joining never goes fully off: it's how your walk finds the map
 const liveCfg = () => ({ stride:S.stride, adaptive:S.adaptive, snap:S.snap, source:S.source, join: S.join === 'off' ? 'normal' : S.join });
 function recompute(){
   if (S.mode === 'live'){
     const m = mapPaths();
-    S.cache = hasMap() ? trackOnMap({ pts: m.drawn, axis: m.axis, refC: mapW().refC, amp: m.amp }, S, liveCfg()) : computePaths(S, liveCfg());
+    S.cache = hasMap() && m.lines.length ? railTrack(m, S, liveCfg(), S.railCache) : computePaths(S, liveCfg());
     const om = S.cache.onMap || [], k = om.length;
-    S.offMap = k >= 2 && !om[k - 1] && !om[k - 2];   // two steps in a row more than 30 cm from anywhere on the map
+    S.offMap = k >= 2 && !om[k - 1] && !om[k - 2];   // two steps in a row that don't fit anywhere on the map
     return;
   }
-  S.cache = computePaths(S, S);
+  // this walk, its marks pinned to where the map has those places (so tapping Kitchen door puts you at the Kitchen
+  // door pin, and a finished walk lines up with the map); the turn onto the map needs the walk's walls while it's new
+  const M = mapPaths(), w = keptMarks(S, S.sel), names = Object.keys(M.places || {});
+  const k = M.idx ? M.idx.indexOf(S.sel) : -1, settled = !S.sel || (k >= 0 && !S.recording);
+  let c = settled ? null : computePaths(w, S);
+  const rot = rotOf(S.sel, c ? c.axis : 0);
+  if (w.places.length && names.length){
+    const own = {};
+    for (const nm of names) own[nm] = turn(M.places[nm], -rot);
+    c = computePaths(w, Object.assign({}, S, { placeTargets: own }));
+  } else if (!c) c = computePaths(w, S);
+  S.cache = turned(c, rot);
   const ev = S.cache.events;
   if (S.recording){
     if (ev.uturns > S.seen.uturns) toast('U-turn: following your path back');
@@ -1146,9 +1600,9 @@ function recompute(){
   }
   S.seen = { uturns: Math.max(S.seen.uturns, ev.uturns), joins: Math.max(S.seen.joins, ev.joins) };
 }
-// Which way you're facing now, in the trace's frame (on the Live tab, turned to line up with the map)
+// Which way you're facing now, in the frame on screen (the first map walk's)
 function liveRel(){
-  const st = S.steps, rot = S.mode === 'live' ? S.cache.rot || 0 : 0;
+  const st = S.steps, rot = S.cache.rot || 0;
   if (S.source === 'compass' && S.liveC != null){
     const rc = S.refC != null ? S.refC : (st.find(s => s.c != null) || {}).c;
     if (rc != null) return wrap(S.liveC - rc + rot);
@@ -1157,7 +1611,7 @@ function liveRel(){
     const rg = S.refG != null ? S.refG : (st[0] ? st[0].g : null);
     if (rg != null) return wrap(S.liveG - rg + rot);
   }
-  const hs = S.cache.hs; return hs.length ? hs[hs.length - 1] : 0;
+  const hs = S.cache.hs; return hs.length ? wrap(hs[hs.length - 1] + (S.mode === 'map' ? rot : 0)) : 0;   // (live headings come turned already)
 }
 
 /* ---------- drawing ---------- */
@@ -1186,9 +1640,12 @@ function draw(){
   ctx.setTransform(dpr,0,0,dpr,0,0);
   ctx.fillStyle = COL.ink; ctx.fillRect(0,0,W,H);
 
-  const live = S.mode === 'live', paths = shownPaths(), mapP = live && hasMap() ? mapPaths().drawn : null;
+  // the map underneath: on the Live tab always, on the Map tab once there's more than one walk to make it from
+  const live = S.mode === 'live', paths = shownPaths(), M = hasMap() ? mapPaths() : null;
+  const several = M && M.walks.length > 1, mapL = M && (live || several) ? M.lines : null;
+  const pins = M ? Object.entries(M.places || {}) : [];
   let x0 = 0, x1 = 0, y0 = 0, y1 = 0;
-  for (const pts of [...paths.map(p => p.pts), mapP || []]) for (const [x,y] of pts){ if (x<x0)x0=x; if (x>x1)x1=x; if (y<y0)y0=y; if (y>y1)y1=y; }
+  for (const pts of [...paths.map(p => p.pts), ...(mapL || [])]) for (const q of pts){ if (!q) continue; const [x,y] = q; if (x<x0)x0=x; if (x>x1)x1=x; if (y<y0)y0=y; if (y>y1)y1=y; }
   const MIN = 6;
   if (x1 - x0 < MIN){ const m = (x0 + x1) / 2; x0 = m - MIN/2; x1 = m + MIN/2; }
   if (y1 - y0 < MIN){ const m = (y0 + y1) / 2; y0 = m - MIN/2; y1 = m + MIN/2; }
@@ -1215,10 +1672,10 @@ function draw(){
     const Y = Math.round(sy(k*step)) + .5; ctx.beginPath(); ctx.moveTo(0,Y); ctx.lineTo(W,Y); ctx.stroke();
   }
 
-  // the map (Live tab): a soft band about as wide as a doorway, with its centre line
+  // the map: a soft band about as wide as a doorway, with its centre line
   ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-  if (mapP && mapP.length > 1){
-    const line = () => { ctx.beginPath(); mapP.forEach(([x,y], i) => i ? ctx.lineTo(sx(x), sy(y)) : ctx.moveTo(sx(x), sy(y))); ctx.stroke(); };
+  if (mapL){
+    const line = () => { ctx.beginPath(); for (const ln of mapL) ln.forEach(([x,y], i) => i ? ctx.lineTo(sx(x), sy(y)) : ctx.moveTo(sx(x), sy(y))); ctx.stroke(); };
     ctx.strokeStyle = COL.muted;
     ctx.globalAlpha = .2; ctx.lineWidth = Math.min(34, Math.max(10, 0.8 * V.sc)); line();
     ctx.globalAlpha = .55; ctx.lineWidth = 1.5; line();
@@ -1229,7 +1686,10 @@ function draw(){
   for (const p of paths){
     if (p.pts.length < 2) continue;
     ctx.globalAlpha = p.a; ctx.strokeStyle = p.col; ctx.lineWidth = p.w;
-    ctx.beginPath(); p.pts.forEach(([x,y], i) => i ? ctx.lineTo(sx(x), sy(y)) : ctx.moveTo(sx(x), sy(y))); ctx.stroke();
+    ctx.beginPath();
+    let pen = false;                                   // a gap (null) where you jumped to a place you marked
+    for (const q of p.pts){ if (!q){ pen = false; continue; } if (pen) ctx.lineTo(sx(q[0]), sy(q[1])); else ctx.moveTo(sx(q[0]), sy(q[1])); pen = true; }
+    ctx.stroke();
     if (p.dots && S.stride * V.sc > 14){
       ctx.fillStyle = p.col;
       for (let i = 1; i < p.pts.length - 1; i++){ ctx.beginPath(); ctx.arc(sx(p.pts[i][0]), sy(p.pts[i][1]), 1.8, 0, TAU); ctx.fill(); }
@@ -1237,9 +1697,32 @@ function draw(){
     ctx.globalAlpha = 1;
   }
 
+  // places you marked: where the walks agree they are. Names go beside, above or below their pin, wherever they
+  // don't run into another name; where none of those is free, just the pin.
+  if (pins.length && (S.steps.length || S.recording || mapL)){
+    ctx.font = '600 10.5px ' + getComputedStyle(document.body).fontFamily; ctx.textBaseline = 'middle';
+    const boxes = [], hit = b => boxes.some(o => b[0] < o[2] && b[2] > o[0] && b[1] < o[3] && b[3] > o[1]);
+    for (const [, p] of pins){ const X = sx(p[0]), Y = sy(p[1]); boxes.push([X - 6, Y - 7, X + 6, Y + 7]); }
+    for (const [nm, p] of pins){
+      const X = sx(p[0]), Y = sy(p[1]);
+      ctx.fillStyle = COL.raw; ctx.strokeStyle = COL.ink; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(X, Y - 6); ctx.lineTo(X + 5, Y); ctx.lineTo(X, Y + 6); ctx.lineTo(X - 5, Y); ctx.closePath(); ctx.fill(); ctx.stroke();
+      const w = ctx.measureText(nm).width;
+      const spots = [[X + 9, Y, 'left'], [X - 9, Y, 'right'], [X - w / 2, Y - 14, 'left'], [X - w / 2, Y + 14, 'left']];
+      for (const [tx, ty, al] of spots){
+        const l = al === 'left' ? tx : tx - w, b = [l - 2, ty - 7, l + w + 2, ty + 7];
+        if (hit(b) || l < 4 || l + w > W - 4) continue;   // (and not off the edge of the screen)
+        boxes.push(b); ctx.textAlign = al;
+        ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(11,26,43,.85)'; ctx.strokeText(nm, tx, ty);
+        ctx.fillStyle = COL.text; ctx.fillText(nm, tx, ty);
+        break;
+      }
+    }
+  }
+
   // start marker (not while the instructions sit in the middle of an empty screen)
   const X0 = sx(0), Y0 = sy(0);
-  if (S.steps.length || S.recording || mapP){
+  if (S.steps.length || S.recording || mapL){
     ctx.strokeStyle = COL.text; ctx.lineWidth = 2; ctx.fillStyle = COL.ink;
     ctx.beginPath(); ctx.arc(X0, Y0, 8, 0, TAU); ctx.fill(); ctx.stroke();
     ctx.fillStyle = COL.text; ctx.font = '700 9px ui-monospace, Menlo, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -1290,7 +1773,8 @@ function drawSpark(){
   sctx.strokeStyle = 'rgba(126,170,214,.25)'; sctx.lineWidth = 1;
   sctx.beginPath(); sctx.moveTo(0, y(0)); sctx.lineTo(W, y(0)); sctx.stroke();
   sctx.setLineDash([4,4]); sctx.strokeStyle = COL.rec;
-  sctx.beginPath(); sctx.moveTo(0, y(S.thr)); sctx.lineTo(W, y(S.thr)); sctx.stroke(); sctx.setLineDash([]);
+  const bar = S.recording ? stepBar(performance.now()) : S.thr;   // lower while you're walking softly
+  sctx.beginPath(); sctx.moveTo(0, y(bar)); sctx.lineTo(W, y(bar)); sctx.stroke(); sctx.setLineDash([]);
   const d = S.spark;
   if (d.length > 1){
     sctx.strokeStyle = COL.straight; sctx.lineWidth = 1.5; sctx.beginPath();
@@ -1326,16 +1810,30 @@ function ui(throttled){
   const empty = !(n > 0 || S.recording);
   $('empty').hidden = !empty;
   if (empty){
-    $('empty').classList.toggle('card', live && !noMap);
-    $('emptyH').textContent = !live ? 'Tap Start, then walk' : noMap ? 'No map yet' : 'Stand at S, then tap Start';
-    $('emptyP').textContent = !live ? 'Hold the phone flat in front of you, screen up. Begin facing along a wall so the grid lines up with your rooms.'
-      : noMap ? 'Walk your route on the Map tab first. That walk becomes the map you walk on here.'
-      : 'Face the way you faced when you started the map, then walk as usual. The dot shows where you are on it.';
+    const later = !live && S.sel > 0;
+    $('empty').classList.toggle('card', (live && !noMap) || later);
+    $('emptyH').textContent = live ? (noMap ? 'No map yet' : 'Stand at S, then tap Start') : later ? 'Walk ' + (S.sel + 1) + ': start at S' : 'Tap Start, then walk';
+    $('emptyP').textContent = live ? (noMap ? 'Walk your route on the Map tab first. That walk becomes the map you walk on here.'
+        : 'Face the way you faced when you started the map, then walk as usual. Or tap Start, then Mark place where you are standing.')
+      : later ? 'Start where walk 1 started, facing the same way. Mark the same places with the same names; your route can be different.'
+      : 'Hold the phone flat in front of you, screen up, facing along a wall. Tap Mark place each time you stand in a doorway.';
   }
   $('btnHome').hidden = n < 4;
+  $('btnMark').hidden = !(S.recording || n > 0) || noMap;
   $('tilt').hidden = !(S.recording && (Math.abs(S.beta) > 55 || Math.abs(S.gamma) > 45)) || !$('banner').hidden;
   $('offMap').hidden = !(live && S.offMap) || !$('tilt').hidden || !$('banner').hidden;
   document.querySelectorAll('#modeSeg button').forEach(x => x.setAttribute('aria-pressed', x.dataset.m === S.mode));
+  // map walks: Walk 1, Walk 2 ... and a button for another
+  const ws = $('walkSeg');
+  ws.hidden = live;
+  if (!live){
+    const want = S.maps.map((w, i) => 'w' + i + (i === S.sel ? '*' : '')).join(',') + (S.maps.length < MAXWALKS && mapWalks()[S.maps.length - 1].steps.length ? ',add' : '');
+    if (ws.dataset.k !== want){
+      ws.dataset.k = want; ws.textContent = '';
+      S.maps.forEach((w, i) => { const x = document.createElement('button'); x.textContent = 'Walk ' + (i + 1); x.setAttribute('aria-pressed', i === S.sel); x.onclick = () => selectWalk(i); ws.appendChild(x); });
+      if (want.endsWith(',add')){ const x = document.createElement('button'); x.className = 'add'; x.textContent = '+ Walk ' + (S.maps.length + 1); x.onclick = addWalk; ws.appendChild(x); }
+    }
+  }
   document.querySelectorAll('#viewSeg button').forEach(x => x.setAttribute('aria-pressed', x.dataset.v === S.view));
   document.querySelectorAll('#srcSeg button').forEach(x => x.setAttribute('aria-pressed', x.dataset.s === S.source));
   document.querySelectorAll('#joinSeg button').forEach(x => x.setAttribute('aria-pressed', x.dataset.j === S.join));
@@ -1373,13 +1871,13 @@ function resetWalk(){ putWalk(blankWalk()); }
 function start(){
   if (!S.steps.length){ resetWalk(); S.refG = S.liveG; S.refC = S.liveC; S.walkStart = Date.now(); recompute(); }
   S.accG = {s:0,c:0,n:0}; S.accC = {s:0,c:0,n:0}; S.sMax = -Infinity; S.sMin = Infinity;
-  S.inPeak = false; S.lastStepT = performance.now();
+  S.inPeak = false; S.lastStepT = performance.now(); S.peaks = []; S.beats = [];
   S.segStart = Date.now(); S.recording = true;
   keepAwake(true); ui();
 }
 function stop(){
   S.recording = false; S.elapsed += Date.now() - S.segStart;
-  keepAwake(false); save(); ui();
+  keepAwake(false); save(); recompute(); ui();
 }
 $('btnStart').onclick = async () => {
   if (S.recording){ stop(); return; }
@@ -1388,19 +1886,36 @@ $('btnStart').onclick = async () => {
   $('banner').hidden = true;
   const fresh = !S.steps.length;
   start();
-  if (S.mode === 'live' && fresh) toast('Walk as usual. Your dot locks onto the map in a few steps.');
+  if (S.mode === 'live' && fresh) toast('Walk as usual. Your dot follows the map.');
 };
 
-// Map | Live. Each tab keeps its own walk; switching swaps them.
+// Map | Live. Each tab keeps its own walk.
 function setMode(m){
   if (m === S.mode) return;
   if (S.recording){ toast('Stop the walk first'); return; }
-  save();
-  const cur = takeWalk(); putWalk(S.other); S.other = cur;
+  save(); stash();
   S.mode = m; store.set('mode', m);
+  putWalk(m === 'map' ? S.maps[S.sel] : S.live);
   V = null; D = null; recompute(); ui();
 }
 document.querySelectorAll('#modeSeg button').forEach(btn => btn.onclick = () => setMode(btn.dataset.m));
+
+// the map walks
+function selectWalk(i){
+  if (i === S.sel) return;
+  if (S.recording){ toast('Stop the walk first'); return; }
+  save(); stash();
+  S.sel = i; store.set('sel', i);
+  putWalk(S.maps[i]); V = null; D = null; recompute(); ui();
+}
+function addWalk(){
+  if (S.recording){ toast('Stop the walk first'); return; }
+  if (S.maps.length >= MAXWALKS) return;
+  save(); stash();
+  S.maps.push(blankWalk()); S.sel = S.maps.length - 1; store.set('sel', S.sel); store.set('mapCount', S.maps.length);
+  putWalk(S.maps[S.sel]); V = null; D = null; recompute(); ui();
+  toast('Walk ' + (S.sel + 1) + ': start at S and mark the same places');
+}
 
 $('btnHome').onclick = () => {
   const i = S.steps.length;
@@ -1411,20 +1926,77 @@ $('btnHome').onclick = () => {
   toast(S.mode === 'live' ? 'Back at S: your dot is there now' : S.view === 'raw' ? 'Marked as the start. Switch to Corrected to see it.' : 'Marked as the start. Loop closed here.');
 };
 
+// Mark place: the names already used on the map walks (first-used first), or a new one
+function placeNames(){
+  const seen = [];
+  for (const w of mapWalks()) for (const p of w.places) if (!seen.includes(p.name)) seen.push(p.name);
+  return seen;
+}
+const openPlaces = on => { $('placeSheet').hidden = !on; $('placeBg').hidden = !on; };
+$('btnMark').onclick = () => {
+  S.markI = S.steps.length;
+  const live = S.mode === 'live', names = live ? Object.keys(mapPaths().places || {}) : placeNames(), list = $('placeList');
+  list.textContent = '';
+  const add = (label, sub, fn, cls) => { const x = document.createElement('button'); x.textContent = label; if (sub){ const sm = document.createElement('small'); sm.textContent = sub; x.appendChild(sm); } if (cls) x.className = cls; x.onclick = fn; list.appendChild(x); };
+  add('S', 'Start', () => { openPlaces(false); if (S.markI === 0 && !live){ toast('This walk starts at S'); return; } if (S.markI === 0){ toast('You start at S'); return; } if (!S.anchors.some(a => a.i === S.markI)) S.anchors.push({ i: S.markI }); recompute(); ui(); saveSoon(); toast(live ? 'Back at S: your dot is there now' : 'Marked S'); }, 'start');
+  for (const nm of names){
+    const here = S.places.filter(p => p.name === nm).length;
+    add(nm, live ? '' : (here ? 'marked ' + here + '× this walk' : ''), () => markPlace(nm));
+  }
+  $('placeNewRow').hidden = live;
+  $('placeHint').textContent = live ? (names.length ? 'Tap where you are. Your dot moves there.' : 'This map has no named places yet. Mark them while walking the map.')
+    : 'Stand in the doorway, then tap its name. Use the same names on every walk.';
+  $('placeNew').value = '';
+  const lm = lastMark(), undo = $('placeUndo');
+  undo.hidden = !lm;
+  if (lm){ const ago = S.steps.length - lm.i; undo.textContent = 'Undo last mark: ' + lm.name + (ago > 0 ? ' (' + ago + ' step' + (ago === 1 ? '' : 's') + ' ago)' : ''); }
+  openPlaces(true);
+};
+// the newest mark on this walk: a named place or a tap on S (a wrong tap would bend the whole walk)
+function lastMark(){
+  const p = S.places.reduce((x, y) => !x || y.i >= x.i ? y : x, null), a = S.anchors.reduce((x, y) => !x || y.i >= x.i ? y : x, null);
+  if (p && (!a || p.i >= a.i)) return { kind: 'place', i: p.i, name: p.name };
+  return a ? { kind: 'start', i: a.i, name: 'S' } : null;
+}
+$('placeUndo').onclick = () => {
+  const lm = lastMark(); if (!lm) return;
+  if (lm.kind === 'place'){ const k = S.places.findIndex(p => p.i === lm.i && p.name === lm.name); S.places = S.places.filter((p, j) => j !== k); }
+  else { const k = S.anchors.findIndex(a => a.i === lm.i); S.anchors = S.anchors.filter((a, j) => j !== k); }
+  openPlaces(false); recompute(); ui(); saveSoon();
+  toast('Removed the mark at ' + lm.name);
+};
+function markPlace(nm){
+  nm = (nm || '').trim().slice(0, 40);
+  if (!nm) return;
+  openPlaces(false);
+  S.places = S.places.filter(p => p.i !== S.markI).concat([{ i: S.markI, name: nm }]).sort((x, y) => x.i - y.i);
+  recompute(); ui(); saveSoon();
+  toast(S.mode === 'live' ? 'You’re at ' + nm : 'Marked ' + nm);
+}
+$('placeAdd').onclick = () => markPlace($('placeNew').value);
+$('placeNew').onkeydown = e => { if (e.key === 'Enter'){ e.preventDefault(); markPlace($('placeNew').value); } };
+$('placeClose').onclick = () => openPlaces(false);
+$('placeBg').onclick = () => openPlaces(false);
+
 let clearArmed = null;
 $('btnClear').onclick = () => {
-  const b = $('btnClear');
-  if (!S.steps.length && !S.recording) return;
+  const b = $('btnClear'), several = S.mode === 'map' && S.maps.length > 1;
+  if (!S.steps.length && !S.recording && !several) return;
   if (!clearArmed){
-    b.textContent = 'Tap to confirm'; b.classList.add('armed');
+    b.textContent = several ? 'Remove walk ' + (S.sel + 1) + '?' : 'Tap to confirm'; b.classList.add('armed');
     clearArmed = setTimeout(() => { clearArmed = null; b.textContent = 'Clear'; b.classList.remove('armed'); }, 2500);
     return;
   }
   clearTimeout(clearArmed); clearArmed = null; b.textContent = 'Clear'; b.classList.remove('armed');
   if (S.recording) stop();
-  resetWalk();
-  if (S.mode === 'map') S.other = blankWalk();   // a live walk on a map that's gone goes with it
-  recompute(); saveAll(); ui(); V = null; D = null;
+  if (several){                                   // one walk of several: it goes, the others stay
+    S.maps.splice(S.sel, 1); S.sel = Math.max(0, S.sel - 1); store.set('sel', S.sel);
+    putWalk(S.maps[S.sel]);
+  } else {
+    resetWalk();
+    if (S.mode === 'map') S.live = blankWalk();   // a live walk on a map that's gone goes with it
+  }
+  stash(); recompute(); saveAll(); ui(); V = null; D = null;
 };
 
 document.querySelectorAll('#viewSeg button').forEach(btn => btn.onclick = () => { S.view = btn.dataset.v; store.set('view', S.view); ui(); });
@@ -1460,12 +2032,21 @@ $('sheetBg').onclick = () => openSheet(false);
 /* ---------- persistence, export, import ---------- */
 function snapshot(w){
   w = w || S;
-  return { app:'pathtrace', version:2, exported:new Date().toISOString(), stride:S.stride, threshold:S.thr, source:S.source,
-    refG:w.refG, refC:w.refC, elapsedMs:w.elapsed, steps:w.steps, anchors:w.anchors, trace:w.trace };
+  return { app:'pathtrace', version:3, exported:new Date().toISOString(), stride:S.stride, threshold:S.thr, source:S.source,
+    refG:w.refG, refC:w.refC, elapsedMs:w.elapsed, steps:w.steps, anchors:w.anchors, places:w.places, trace:w.trace };
 }
-const keyOf = mode => mode === 'map' ? 'walk' : 'live';   // the Map tab's walk keeps the old name, so a saved walk is your map
-function save(){ store.set(keyOf(S.mode), snapshot()); }
-function saveAll(){ save(); store.set(keyOf(S.mode === 'map' ? 'live' : 'map'), snapshot(S.other)); }
+// each map walk under its own key (walk 1 keeps the old name, so a walk saved by an older version is your map)
+const mapKey = i => i ? 'walk' + (i + 1) : 'walk';
+function save(){
+  if (S.mode === 'map'){ store.set(mapKey(S.sel), snapshot()); store.set('mapCount', S.maps.length); }
+  else store.set('live', snapshot());
+}
+function saveAll(){
+  stash();
+  S.maps.forEach((w, i) => store.set(mapKey(i), snapshot(w)));
+  for (let i = S.maps.length; i < MAXWALKS; i++) try { localStorage.removeItem('pathtrace.' + mapKey(i)); } catch(e){}
+  store.set('mapCount', S.maps.length); store.set('sel', S.sel); store.set('live', snapshot(S.live));
+}
 let saveT; function saveSoon(){ clearTimeout(saveT); saveT = setTimeout(save, 800); }
 function parseWalk(d){
   if (!d || !Array.isArray(d.steps)) throw new Error('not a Pathtrace walk file');
@@ -1474,6 +2055,7 @@ function parseWalk(d){
     .map(s => ({ t:s.t|0, g:s.g, c: typeof s.c === 'number' ? s.c : null, a: typeof s.a === 'number' ? s.a : 0 }));
   w.trace = Array.isArray(d.trace) ? d.trace.filter(p => Array.isArray(p) && p.length >= 2) : [];
   w.anchors = Array.isArray(d.anchors) ? d.anchors.filter(a => a && a.i > 0) : [];
+  w.places = Array.isArray(d.places) ? d.places.filter(p => p && typeof p.name === 'string' && p.name && p.i >= 0).map(p => ({ i: p.i | 0, name: p.name.slice(0, 40) })) : [];
   w.refG = typeof d.refG === 'number' ? d.refG : null;
   w.refC = typeof d.refC === 'number' ? d.refC : null;
   w.elapsed = d.elapsedMs || 0;
@@ -1481,11 +2063,12 @@ function parseWalk(d){
   w.walkStart = Date.now() - lastT - 1000;   // a resumed walk carries on the same clock
   return w;
 }
-// Put a map walk and a live walk on the two tabs, and open one of them
-function setWalks(mapRec, liveRec, mode){
+// Put the map walks and the live walk in place, and open a tab
+function setWalks(maps, liveRec, mode){
+  S.maps = maps.length ? maps : [blankWalk()]; S.sel = 0; S.live = liveRec;
   S.mode = mode; store.set('mode', mode);
-  putWalk(mode === 'map' ? mapRec : liveRec); S.other = mode === 'map' ? liveRec : mapRec;
-  S.mapCache = null; V = null; D = null;
+  putWalk(mode === 'map' ? S.maps[0] : S.live);
+  S.merged = null; S.railCache = {}; V = null; D = null;
   recompute(); S.seen = { ...S.cache.events }; saveAll(); ui();
 }
 
@@ -1495,15 +2078,16 @@ function dataURLtoBlob(u){
   return new Blob([arr], { type: h.split(':')[1].split(';')[0] });
 }
 $('btnExport').onclick = async () => {
-  if (!S.steps.length){ toast('Nothing to export yet. Record a walk first.'); return; }
-  const live = S.mode === 'live', d = new Date(), name = (live ? 'live-' : 'walk-') + d.toISOString().slice(0,16).replace(/[:T]/g, '-');
-  const data = snapshot();
-  if (live){ data.mode = 'live'; data.map = snapshot(S.other); }   // a live walk only makes sense with its map
+  const live = S.mode === 'live', maps = mapWalks();
+  if (!S.steps.length && !(maps.some(w => w.steps.length) && !live)){ toast('Nothing to export yet. Record a walk first.'); return; }
+  const d = new Date(), name = (live ? 'live-' : 'map-') + d.toISOString().slice(0,16).replace(/[:T]/g, '-');
+  // the walk on screen, and with it every map walk (a live walk only makes sense with its map)
+  const data = Object.assign(snapshot(), { mode: S.mode, sel: S.sel, maps: maps.map(w => snapshot(w)) });
   const png = dataURLtoBlob(cv.toDataURL('image/png'));
   const json = new Blob([JSON.stringify(data)], { type:'application/json' });
   const files = [ new File([png], name + '.png', { type:'image/png' }), new File([json], name + '.json', { type:'application/json' }) ];
   if (navigator.canShare && navigator.canShare({ files })){
-    try { await navigator.share({ files, title: live ? 'Pathtrace live walk' : 'Pathtrace walk' }); return; }
+    try { await navigator.share({ files, title: live ? 'Pathtrace live walk' : 'Pathtrace map' }); return; }
     catch(e){ if (e.name === 'AbortError') return; }
   }
   for (const f of files){
@@ -1518,8 +2102,13 @@ $('importFile').onchange = e => {
     try {
       if (S.recording) stop();
       const d = JSON.parse(rd.result);
-      if (d && d.map && Array.isArray(d.map.steps)) setWalks(parseWalk(d.map), parseWalk(d), 'live');   // a live walk, with its map
-      else setWalks(parseWalk(d), blankWalk(), S.mode);   // a walk: your map now (a live walk on the old one no longer fits)
+      if (d && Array.isArray(d.maps) && d.maps.length){        // a map (and maybe a live walk on it)
+        const maps = d.maps.slice(0, MAXWALKS).map(parseWalk), liveRec = d.mode === 'live' ? parseWalk(d) : blankWalk();
+        setWalks(maps, liveRec, d.mode === 'live' ? 'live' : 'map');
+        if (d.mode !== 'live' && d.sel > 0 && d.sel < maps.length) selectWalk(d.sel);
+      }
+      else if (d && d.map && Array.isArray(d.map.steps)) setWalks([parseWalk(d.map)], parseWalk(d), 'live');   // an older live file
+      else setWalks([parseWalk(d)], blankWalk(), S.mode);   // a walk: your map now (a live walk on the old one no longer fits)
       if (typeof d.stride === 'number') setStride(d.stride);
       openSheet(false); toast('Opened ' + f.name);
     }
@@ -1532,7 +2121,7 @@ const LIVE_DEMO = [[0, 2.4], [90, 1.2], [0, 2.6], [180, 2.6], [270, 1.2], [180, 
 $('demoBtn').onclick = () => {
   if (S.recording) stop();
   const rec = w => parseWalk({ steps: w.steps, trace: w.trace, refG: w.refG, refC: w.refC, elapsedMs: w.elapsedMs });
-  setWalks(rec(simulateWalk(DEMO, 3, DEMO_NOISE)), rec(simulateWalk(LIVE_DEMO, 10, DEMO_NOISE)), S.mode);
+  setWalks([rec(simulateWalk(DEMO, 3, DEMO_NOISE))], rec(simulateWalk(LIVE_DEMO, 10, DEMO_NOISE)), S.mode);
   openSheet(false);
   if (S.mode === 'map'){ S.view = 'both'; store.set('view', S.view); ui(); }
   toast(S.mode === 'live' ? 'Demo: a second walk, tracked on the bedroom map' : 'Demo: a bedroom walk, raw and corrected');
@@ -1541,9 +2130,13 @@ $('demoBtn').onclick = () => {
 /* ---------- boot ---------- */
 try {
   const rec = k => { const d = store.get(k, null); return d && Array.isArray(d.steps) && d.steps.length ? parseWalk(d) : blankWalk(); };
-  const m = rec('walk'), l = rec('live');
-  putWalk(S.mode === 'map' ? m : l); S.other = S.mode === 'map' ? l : m;
-  if (S.steps.length) toast(S.mode === 'live' ? 'Restored your live walk' : 'Restored your last walk');
+  const count = Math.min(MAXWALKS, Math.max(1, store.get('mapCount', 1) | 0));
+  S.maps = Array.from({ length: count }, (_, i) => rec(mapKey(i)));
+  while (S.maps.length > 1 && !S.maps[S.maps.length - 1].steps.length && S.maps.length - 1 !== store.get('sel', 0)) S.maps.pop();
+  S.sel = Math.min(S.maps.length - 1, Math.max(0, store.get('sel', 0) | 0));
+  S.live = rec('live');
+  putWalk(S.mode === 'map' ? S.maps[S.sel] : S.live);
+  if (S.steps.length) toast(S.mode === 'live' ? 'Restored your live walk' : S.maps.length > 1 ? 'Restored your ' + S.maps.length + ' map walks' : 'Restored your last walk');
 } catch(e){}
 recompute(); S.seen = { ...S.cache.events }; ui();
 requestAnimationFrame(draw);
