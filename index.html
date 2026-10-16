@@ -23,7 +23,7 @@
   --raw:#f2c14e;
   --straight:#5fd0e6;
   --rec:#ff6b5a;
-  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, "Roboto Mono", "Droid Sans Mono", monospace;
   --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Segoe UI", sans-serif;
   color-scheme: dark;
 }
@@ -72,6 +72,9 @@ main{flex:1;position:relative;min-height:0;overflow:hidden}
 /* on the Live tab the map is showing, so the instructions sit at the bottom instead of over it */
 .empty.card{top:auto;bottom:14px;transform:translateX(-50%);width:min(420px,calc(100% - 32px));text-align:left;background:rgba(16,36,58,.94);
   border:1px solid var(--line);border-radius:12px;padding:12px 14px;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.empty .cam{pointer-events:auto;margin-top:16px;height:48px;padding:0 18px;display:inline-flex;align-items:center;gap:9px;border-color:rgba(95,208,230,.55);color:var(--straight)}
+.empty .cam svg{width:20px;height:20px;stroke:currentColor}
+.empty.card .cam{margin-top:10px}
 .empty.card h1{font-size:16px;margin-bottom:4px}
 .empty.card p{font-size:13.5px;text-wrap:pretty}
 .banner{position:absolute;left:max(16px,env(safe-area-inset-left,0px));right:max(16px,env(safe-area-inset-right,0px));top:86px;
@@ -147,6 +150,25 @@ label.file input{position:absolute;inset:0;opacity:0}
 .switch[aria-checked="true"]{background:var(--straight)}
 .switch[aria-checked="true"] span{transform:translateX(20px);background:var(--ink)}
 .tips ul{margin:0;padding-left:18px;color:var(--muted);font-size:13.5px;line-height:1.5;display:grid;gap:4px}
+/* camera walk: drawn over the camera view (WebXR DOM overlay); see-through except for its panels */
+.xr{position:fixed;inset:0;z-index:30;display:flex;flex-direction:column;gap:10px;padding:max(26px,env(safe-area-inset-top,0px)) 16px max(18px,env(safe-area-inset-bottom,0px));background:transparent;color:var(--text);font-family:var(--sans);-webkit-user-select:none;user-select:none}
+.xr-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.xr-chip,.xr-stats{font:600 13px var(--sans);padding:8px 12px;border-radius:999px;background:rgba(11,26,43,.8);border:1px solid var(--line)}
+.xr-stats{font-family:var(--mono);white-space:nowrap}
+.xr-chip.ok{color:var(--straight)}
+.xr-chip.finding{color:var(--raw)}
+.xr-chip.lost{color:#ffd9d3;border-color:var(--rec)}
+#xrMap{width:100%;height:36vh;border-radius:14px;background:rgba(11,26,43,.74);border:1px solid var(--line);display:block}
+.xr-hint{margin:0;font-size:14px;line-height:1.45;background:rgba(11,26,43,.8);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.xr-say{align-self:center;font:600 14px var(--sans);background:var(--panel-2);border:1px solid var(--line);border-radius:12px;padding:9px 14px}
+.xr-bottom{margin-top:auto;display:flex;gap:10px}
+.xr-bottom .btn{flex:1}
+.xr-places{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:12px;display:flex;flex-direction:column;gap:10px;max-height:62vh;overflow:auto}
+.xr-places h2{margin:0;font-size:16px}
+.xr-pl-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.xr-pl-list button{min-height:46px;text-align:left;overflow-wrap:anywhere}
+.xr-places .row2{display:flex;gap:10px}
+.xr-places .row2 .btn{flex:1}
 @media (prefers-reduced-motion:reduce){.status.rec i{animation:none}.btn:active,.home-btn:active{transform:none}.switch,.switch span{transition:none}}
 </style>
 </head>
@@ -174,6 +196,7 @@ label.file input{position:absolute;inset:0;opacity:0}
   <div id="empty" class="empty">
     <h1 id="emptyH">Tap Start, then walk</h1>
     <p id="emptyP">Hold the phone flat in front of you, screen up. Begin facing along a wall so the grid lines up with your rooms.</p>
+    <button id="camBtn" class="btn cam" hidden><svg viewBox="0 0 24 24" fill="none" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-2.5h6L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>Map with the camera</button>
   </div>
   <div id="banner" class="banner" hidden><span id="bannerText"></span><button id="bannerClose" aria-label="Dismiss">×</button></div>
   <div id="toast" class="toast" hidden></div>
@@ -202,6 +225,20 @@ label.file input{position:absolute;inset:0;opacity:0}
   </div>
 </footer>
 
+<div id="xr" class="xr" hidden>
+  <div class="xr-top"><div id="xrStatus" class="xr-chip finding">Starting the camera…</div><div class="xr-stats"><span id="xrDist">0.0</span> m · <span id="xrTime">00:00</span></div></div>
+  <div id="xrPlaces" class="xr-places" hidden>
+    <h2>Where are you?</h2>
+    <div id="xrPlList" class="xr-pl-list"></div>
+    <div class="inline"><input id="xrPlNew" type="text" placeholder="New place, e.g. Kitchen door" maxlength="40" autocomplete="off" enterkeyhint="done"><button id="xrPlAdd" class="btn small">Add</button></div>
+    <div class="row2"><button id="xrPlUndo" class="btn small">Undo last mark</button><button id="xrPlCancel" class="btn small">Cancel</button></div>
+  </div>
+  <canvas id="xrMap"></canvas>
+  <p id="xrHint" class="xr-hint">Hold the phone up, camera facing where you walk. Walk at your normal pace and turn slowly, keeping the camera on the room rather than a blank wall. Tap Mark place in each doorway.</p>
+  <div id="xrSay" class="xr-say" hidden></div>
+  <div id="xrBottom" class="xr-bottom"><button id="xrMark" class="btn">Mark place</button><button id="xrDone" class="btn primary">Done</button></div>
+</div>
+
 <div id="sheetBg" class="sheet-bg" hidden></div>
 <section id="sheet" class="sheet" hidden aria-label="Settings">
   <div class="sheet-head"><h2>Settings</h2><button id="sheetClose" class="btn small">Done</button></div>
@@ -211,6 +248,11 @@ label.file input{position:absolute;inset:0;opacity:0}
     <div class="row"><label for="stride">Stride length</label><output id="strideOut">0.70 m</output></div>
     <div class="stepper"><button data-d="-0.01" aria-label="Shorter">−</button><input type="range" id="stride" min="0.40" max="1.00" step="0.01"><button data-d="0.01" aria-label="Longer">+</button></div>
     <p class="hint">Your typical step. Changing it rescales the whole trace, including a walk you already recorded.</p>
+  </div>
+
+  <div class="field" id="buzzField">
+    <div class="row"><label for="buzz">Buzz on each step</label><button id="buzz" class="switch" role="switch" aria-checked="true"><span></span></button></div>
+    <p class="hint">A short buzz every time a step counts, so you can feel when one is missed (very slow steps, shuffling at a door).</p>
   </div>
 
   <div class="field">
@@ -249,6 +291,17 @@ label.file input{position:absolute;inset:0;opacity:0}
     <p class="hint">Both are recorded on every step, so you can switch after a walk and compare. Gyro ignores magnetic interference but slowly drifts. Compass doesn't drift but bends near fridges, steel and wiring.</p>
   </div>
 
+  <div class="field" id="camField">
+    <label>Camera mapping</label>
+    <p class="hint" id="camHint"></p>
+  </div>
+
+  <div class="field" id="magField">
+    <label>Magnetic field</label>
+    <p class="hint" id="magHint"></p>
+    <button id="magCopy" class="btn small" hidden>Copy the flag address</button>
+  </div>
+
   <div class="field">
     <label>Walk data</label>
     <div class="inline">
@@ -261,14 +314,16 @@ label.file input{position:absolute;inset:0;opacity:0}
   <div class="field tips">
     <label>For a good trace</label>
     <ul>
-      <li>Hold the phone flat in front of you, screen up, like reading a map.</li>
+      <li>Camera walks (Android): wait at S until it says Tracking, then walk with the phone held up so the camera sees the room, not a blank wall or the floor. Turn slowly. Good light helps.</li>
+      <li>Step walks: hold the phone flat in front of you, screen up, like reading a map.</li>
       <li>Start at a spot you can find again, like the door, facing along a wall.</li>
       <li>Walk at a normal, steady pace. Shuffling and very slow steps get missed.</li>
       <li>When you're back at the start, tap I'm at start. The Corrected view closes the loop there.</li>
       <li>Tap Mark place each time you stand in a doorway, and use the same names every walk. Each mark pins the map there. Tapped the wrong name? Mark place › Undo last mark.</li>
       <li>Walk the map two or three times (Walk 2, Walk 3), each from S. The places are put where the walks agree.</li>
       <li>Live: start at S, facing the way you started the map, or tap Mark place where you are. If your dot drifts off, tap Mark place at the next door.</li>
-      <li>Keep the screen on. iPhone stops sending motion data when it locks or you switch apps.</li>
+      <li>On Android each counted step buzzes, so you can feel a missed one. If steps go missing, step a bit more firmly or lower Step threshold.</li>
+      <li>Keep the screen on. The page gets no motion data while the screen is locked or you’re in another app.</li>
     </ul>
   </div>
 </section>
@@ -963,11 +1018,42 @@ function medianPoint(ps){ return ps.length >= 3 ? [median(ps.map(p => p[0])), me
    held in place by the shorter legs of the others, and the loop back to S spreads its error over the whole walk
    instead of the last stretch. Every walk is then worked out again pinned to those places, and the map is the first
    walk's path plus whatever the other walks covered that it didn't. Works for one walk too. */
+/* Which way a walk sits on the map. Each walk's headings are its own: 0 is the way the phone pointed when you tapped
+   Start. Squared to the walls that leaves four choices, a quarter turn apart; the compass says which, but indoors it
+   can be a quarter turn out (a steel door, a fridge, wiring in the wall by S). So the four are tried on the walk's
+   shape: the one that lays its path over the map's lines wins, and the compass (or, without one, facing the same way
+   as the first walk) only decides between ones that fit about as well. Needs 4 m of walk; before that, the compass. */
+function resampled(pts, step){                                 // points every step metres along a path
+  const out = []; let need = 0;
+  for (let k = 1; k < pts.length; k++){
+    const a = pts[k - 1], b = pts[k]; if (!a || !b) continue;
+    const l = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    let t = need;
+    while (t <= l){ const f = l ? t / l : 0; out.push([a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f]); t += step; }
+    need = t - l;
+  }
+  return out;
+}
+function bestTurn(pts, axis, lines, A0, prior){
+  const r0 = wrap(wrap(4 * (A0 - axis)) / 4), cands = [0, 1, 2, 3].map(k => wrap(r0 + k * Q));
+  const near = c => Math.abs(wrap(c - (prior || 0)));
+  const pick = cands.reduce((b, c) => near(c) < near(b) ? c : b);
+  const samp = resampled(pts, 0.5);
+  if (samp.length < 8 || !lines || !lines.length) return { rot: pick, by: 'compass', scores: null };
+  const segs = []; for (const ln of lines) for (let k = 1; k < ln.length; k++) if (ln[k - 1] && ln[k]) segs.push([ln[k - 1], ln[k]]);
+  if (!segs.length) return { rot: pick, by: 'compass', scores: null };
+  const d2 = p => { let b = 4; for (const [a, c] of segs){ const vx = c[0] - a[0], vy = c[1] - a[1], l2 = vx * vx + vy * vy, t = l2 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * vx + (p[1] - a[1]) * vy) / l2)) : 0, dx = p[0] - a[0] - vx * t, dy = p[1] - a[1] - vy * t, d = dx * dx + dy * dy; if (d < b) b = d; } return Math.sqrt(b); };
+  const scores = cands.map(r => samp.reduce((e, p) => e + d2(turn(p, r)), 0) / samp.length);   // mean distance, each point at most 2 m
+  let bi = 0; for (let k = 1; k < 4; k++) if (scores[k] < scores[bi]) bi = k;
+  const pi = cands.indexOf(pick);
+  return scores[pi] > 1.25 * scores[bi] + 0.1 ? { rot: cands[bi], by: 'shape', scores } : { rot: pick, by: 'compass', scores };
+}
 let LEGVAR = [0.09, 0.03, 0];
 function mergeWalks(walks, cfg){
   if (cfg.legvar) LEGVAR = cfg.legvar;
-  const ws = walks.filter(w => w && w.steps && w.steps.length >= 3);
+  const ws = walks.filter(w => w && ((w.steps && w.steps.length >= 3) || isCam(w)));
   if (!ws.length) return null;
+  if (ws.some(isCam)) return camMerge(ws, cfg);
   const bare = w => Object.assign({}, w, { places: [], anchors: [] });
   const runs = ws.map(w => computePaths(bare(w), cfg)), A0 = runs[0].axis;
   // each walk's marks in time order, where the walk (by its own count, no pinning) was at each
@@ -983,9 +1069,9 @@ function mergeWalks(walks, cfg){
   const firstAt = ms => { const o = {}; for (const m of ms) if (m.name && !o[m.name]) o[m.name] = m.at; return o; };
   const rots = runs.map((r, j) => {
     if (!j) return 0;
-    let q = 0;
-    if (ws[j].refC != null && ws[0].refC != null) q = Math.round(wrap(ws[j].refC - ws[0].refC) / Q) * Q;
-    let rot = wrap(q + wrap(4 * (A0 - r.axis - q)) / 4);
+    const prior = ws[j].refC != null && ws[0].refC != null ? wrap(ws[j].refC - ws[0].refC) : 0;
+    let rot = cfg.compassOnly ? wrap(Math.round(prior / Q) * Q + wrap(4 * (A0 - r.axis - Math.round(prior / Q) * Q)) / 4)
+      : bestTurn(r.straight, r.axis, [runs[0].straight], A0, prior).rot;
     const mine = firstAt(marks[j]), base = firstAt(marks[0]);
     const shared = Object.keys(mine).filter(nm => base[nm] && Math.hypot(...base[nm]) > 1.5);
     if (shared.length >= 2){
@@ -1126,6 +1212,163 @@ function mergeWalks(walks, cfg){
   return { lines, pts, gaps, axis: A0, refC: ws[0].refC, amp: amps.length >= 5 ? median(amps) : 0, places, walks: pinned, rots, scales: sc, dropped };
 }
 
+/* ---- maps from the camera ---- */
+/* A camera walk: Chrome on Android follows the phone through ARCore, from what the camera sees and the motion
+   sensors together (as street mapping does on foot), so its path is right to within centimetres over a room, where
+   counting steps is off by a metre or two. cam: [t ms, x, y] every tenth of a second or so, metres from S, +y the way
+   the camera faced at S; null where tracking was lost (the path breaks there). Places marked on it carry ci, the
+   index into cam where you were. */
+const isCam = w => !!(w && Array.isArray(w.cam) && w.cam.filter(Boolean).length >= 10);
+// The path as lines: evened out to a point every 10 cm, the sway of your hand smoothed out over ±30 cm, then thinned
+// to the points that matter (within 4 cm). null between pieces where tracking was lost.
+function camLine(cam){
+  const out = [], runs = [[]];
+  for (const e of cam || []){ if (!e) { if (runs[runs.length - 1].length) runs.push([]); continue; } runs[runs.length - 1].push([e[1], e[2]]); }
+  for (const run of runs){
+    if (!run.length) continue;
+    const even = run.length > 1 ? resampled(run, 0.1) : run.slice();
+    if (run.length > 1){ const last = run[run.length - 1], e = even[even.length - 1]; if (!e || Math.hypot(last[0] - e[0], last[1] - e[1]) > 0.02) even.push(last.slice()); }
+    const sm = even.map((p, k) => {
+      if (k === 0 || k === even.length - 1) return p.slice();
+      const a = Math.max(0, k - 3), b = Math.min(even.length - 1, k + 3); let x = 0, y = 0;
+      for (let i = a; i <= b; i++){ x += even[i][0]; y += even[i][1]; }
+      return [x / (b - a + 1), y / (b - a + 1)];
+    });
+    if (out.length) out.push(null);
+    for (const p of simplify(sm, 0.04)) out.push(p);
+  }
+  return out;
+}
+function simplify(pts, tol){                                     // Douglas-Peucker
+  if (pts.length < 3) return pts.slice();
+  const keep = new Uint8Array(pts.length); keep[0] = keep[pts.length - 1] = 1;
+  const st = [[0, pts.length - 1]];
+  while (st.length){
+    const [a, b] = st.pop(), A = pts[a], B = pts[b], vx = B[0] - A[0], vy = B[1] - A[1], l = Math.hypot(vx, vy);
+    let bi = -1, bd = tol;
+    for (let i = a + 1; i < b; i++){
+      const d = l > 1e-9 ? Math.abs((pts[i][0] - A[0]) * vy - (pts[i][1] - A[1]) * vx) / l : Math.hypot(pts[i][0] - A[0], pts[i][1] - A[1]);
+      if (d > bd){ bd = d; bi = i; }
+    }
+    if (bi >= 0){ keep[bi] = 1; st.push([a, bi], [bi, b]); }
+  }
+  return pts.filter((p, i) => keep[i]);
+}
+const pieces = line => { const o = [[]]; for (const p of line){ if (!p){ if (o[o.length - 1].length) o.push([]); } else o[o.length - 1].push(p); } return o.filter(x => x.length >= 2); };
+// the walls' direction, from the way the path runs (straight stretches count by their length)
+function camAxis(lines){
+  let sx = 0, cx = 0;
+  for (const ln of lines) for (let k = 1; k < ln.length; k++){
+    const a = ln[k - 1], b = ln[k]; if (!a || !b) continue;
+    const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy); if (l < 0.15) continue;
+    const h = Math.atan2(dx, dy); sx += l * Math.sin(4 * h); cx += l * Math.cos(4 * h);
+  }
+  return sx || cx ? Math.atan2(sx, cx) / 4 : 0;
+}
+// where a camera walk was when it marked each place
+function camMarks(w){
+  const out = [];
+  for (const m of (w.places || [])){
+    if (!m || !m.name || !(m.ci >= 0)) continue;
+    let k = Math.min(m.ci, w.cam.length - 1); while (k > 0 && !w.cam[k]) k--;
+    if (w.cam[k]) out.push({ name: m.name, at: [w.cam[k][1], w.cam[k][2]] });
+  }
+  return out;
+}
+// The turn (any angle: a camera walk faces wherever the camera pointed at S) that lays a path over other lines best.
+// Every 3 degrees, then to a quarter of a degree around the best. The compass (prior) only decides between turns
+// that fit about as well, as for step walks.
+function alignTurn(pts, lines, prior){
+  const samp = resampled(pts.filter(Boolean), 0.5);
+  if (samp.length < 8) return prior || 0;
+  const segs = []; for (const ln of lines) for (let k = 1; k < ln.length; k++) if (ln[k - 1] && ln[k]) segs.push([ln[k - 1], ln[k]]);
+  if (!segs.length) return prior || 0;
+  const d1 = p => { let b = 4; for (const [a, c] of segs){ const vx = c[0] - a[0], vy = c[1] - a[1], l2 = vx * vx + vy * vy, t = l2 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * vx + (p[1] - a[1]) * vy) / l2)) : 0, dx = p[0] - a[0] - vx * t, dy = p[1] - a[1] - vy * t, d = dx * dx + dy * dy; if (d < b) b = d; } return Math.sqrt(b); };
+  const score = r => samp.reduce((e, p) => e + d1(turn(p, r)), 0) / samp.length;
+  let best = 0, bs = Infinity;
+  for (let a = -180; a < 180; a += 3){ const v = score(a * DEG); if (v < bs){ bs = v; best = a * DEG; } }
+  for (let a = -3; a <= 3; a += 0.25){ const r = best + a * DEG, v = score(r); if (v < bs){ bs = v; best = r; } }
+  if (prior != null){ const v = score(prior); if (!(v > 1.25 * bs + 0.1)) return wrap(prior); }
+  return wrap(best);
+}
+// The map from camera walks: the first camera walk's path, plus the stretches the others add (lined up on it), with
+// the places where the camera walks marked them. Step walks don't change it: each is turned onto it by its shape
+// and pinned to its places, to show on it.
+function camMerge(ws, cfg){
+  const camJ = ws.map((w, j) => isCam(w) ? j : -1).filter(j => j >= 0), R = camJ[0];
+  const own = ws.map(w => isCam(w) ? camLine(w.cam) : null), rots = ws.map(() => 0);
+  const ref = pieces(own[R]);
+  for (const j of camJ) if (j !== R){
+    const prior = ws[j].refC != null && ws[R].refC != null ? wrap(ws[j].refC - ws[R].refC) : null;
+    rots[j] = alignTurn(own[j], ref, prior);
+  }
+  const lines = [];
+  const covered = (a, b) => {
+    const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2, vx = b[0] - a[0], vy = b[1] - a[1], vl = Math.hypot(vx, vy);
+    for (const ln of lines) for (let k = 1; k < ln.length; k++){
+      const c = ln[k - 1], d = ln[k], ux = d[0] - c[0], uy = d[1] - c[1], ul = Math.hypot(ux, uy);
+      if (ul < 0.02) continue;
+      if (vl > 0.05 && Math.abs(ux * vx + uy * vy) / (ul * vl) < Math.cos(35 * DEG)) continue;
+      const t = Math.max(0, Math.min(1, ((mx - c[0]) * ux + (my - c[1]) * uy) / (ul * ul)));
+      if (Math.hypot(mx - c[0] - ux * t, my - c[1] - uy * t) < (cfg.camTol || 0.6)) return true;   // camera paths agree to well under that
+    }
+    return false;
+  };
+  for (const j of camJ){
+    for (const pc of pieces(own[j].map(p => p && turn(p, rots[j])))){
+      if (j === R){ lines.push(pc); continue; }
+      let k = 0;
+      while (k < pc.length - 1){
+        if (covered(pc[k], pc[k + 1])){ k++; continue; }
+        let e = k, len = 0;
+        while (e < pc.length - 1 && !covered(pc[e], pc[e + 1])){ len += Math.hypot(pc[e + 1][0] - pc[e][0], pc[e + 1][1] - pc[e][1]); e++; }
+        if (len >= 0.5) lines.push(pc.slice(Math.max(0, k - 1), Math.min(pc.length, e + 2)));
+        k = e;
+      }
+    }
+  }
+  const axis = camAxis(lines);
+  const at = {};
+  for (const j of camJ) for (const m of camMarks(ws[j])) (at[m.name] = at[m.name] || []).push(turn(m.at, rots[j]));
+  const places = {};
+  for (const [nm, ps] of Object.entries(at)) places[nm] = medianPoint(ps);
+  const pinned = ws.map((w, j) => {
+    if (isCam(w)){ const d = own[j].map(p => p && turn(p, rots[j])); return { drawn: d, straight: d.filter(Boolean), axis }; }
+    const r0 = computePaths(Object.assign({}, w, { places: [], anchors: [] }), cfg);
+    const prior = w.refC != null && ws[R].refC != null ? wrap(w.refC - ws[R].refC) : 0;
+    rots[j] = bestTurn(r0.straight, r0.axis, lines, axis, prior).rot;
+    const tg = {}; for (const nm in places) tg[nm] = turn(places[nm], -rots[j]);
+    const r = computePaths(w, Object.assign({}, cfg, { placeTargets: tg }));
+    return { drawn: r.drawn.map(p => p && turn(p, rots[j])), straight: r.straight.map(p => turn(p, rots[j])), axis: wrap(r.axis + rots[j]) };
+  });
+  const pts = [], gaps = new Set();
+  for (const ln of lines){ if (pts.length) gaps.add(pts.length); for (const p of ln) pts.push(p.slice()); }
+  const amps = ws.flatMap(w => (w.steps || []).map(s => s.a)).filter(a => a > 0);
+  return { lines, pts, gaps, axis, refC: ws[R].refC, amp: amps.length >= 5 ? median(amps) : 0, places, walks: pinned, rots, scales: ws.map(() => 1), dropped: [], cam: true, ref: R };
+}
+// How far a camera walk went: each reading averaged with two either side (half a second), which takes out the sway of
+// your hand without cutting corners (a smoother path would cut the turns at a room's far end)
+function camLength(cam){
+  let L = 0, last = null;
+  for (let k = 0; k < cam.length; k++){
+    if (!cam[k]){ last = null; continue; }
+    let x = 0, y = 0, c = 0;
+    for (let i = k - 2; i <= k + 2; i++){ const q = cam[i]; if (!q){ if (i < k){ x = 0; y = 0; c = 0; continue; } if (i > k && i < cam.length) break; continue; } x += q[1]; y += q[2]; c++; }
+    const p = [x / c, y / c];
+    if (last) L += Math.hypot(p[0] - last[0], p[1] - last[1]);
+    last = p;
+  }
+  return L;
+}
+// A camera walk shown on its own, in the shape the Map tab draws any walk
+function camPaths(w){
+  const line = camLine(w.cam);
+  while (line.length && !line[line.length - 1]) line.pop();
+  const straight = line.filter(Boolean), lens = [];
+  for (const pc of pieces(line)) for (let k = 1; k < pc.length; k++) lens.push(Math.hypot(pc[k][0] - pc[k - 1][0], pc[k][1] - pc[k - 1][1]));
+  return { hs: [], lens, raw: line, straight: straight.length ? straight : [[0, 0]], drawn: line.length ? line : [[0, 0]], events: { uturns: 0, joins: 0 }, axis: camAxis([line]), places: {}, amp: 0, cam: true };
+}
+
 /* ---- walking on a saved map, on rails ---- */
 /* The map's lines are the only places you can be. Many guesses of where you are, each with its own idea of how long
    your steps really are, are walked along the lines with your steps; any step may have been missed or counted twice.
@@ -1166,7 +1409,13 @@ function railTrack(map, w, cfg, cache){
   const { SG, grid, key } = railIndex(map);
   const raw = buildPath(hs, lens), events = { uturns: startAt.size, joins: 0 };
   if (!SG.length || !n) return { hs, lens, raw, straight: [[0, 0]].concat(raw.slice(1)), drawn: raw, events, rot, onMap: [] };
-  const RP = Object.assign({ miss: 0.08, dbl: 0.02, sig: 0.35, head: 5, R: 0.9, wait: 0.1, waitSig: 0.7, scale: 0.07, n: 300, end: 0.5 }, cfg.rail || {});
+  const RP = Object.assign({ miss: 0.08, dbl: 0.02, sig: 0.35, head: 5, R: 0.9, wait: 0.1, waitSig: 0.7, scale: 0.07, n: 300, end: 0.5, quarters: true }, cfg.rail || {});
+  // Which way you started facing against the map: the compass says (rot), but it can be a quarter turn out near a
+  // steel door or a fridge, so some guesses start a quarter turn (or half) off it. The ones that don't fit the map's
+  // lines die off within a few steps. Without a compass reading, most start facing the way the map's walk did.
+  const hasC = w.refC != null && map.refC != null;
+  const PRIOR = !RP.quarters ? [1, 0, 0, 0] : hasC ? [0.7, 0.1, 0.1, 0.1] : [0.55, 0.15, 0.15, 0.15];
+  const quarterOf = j => { let c = 0; for (let k = 0; k < 4; k++){ c += PRIOR[k]; if (j < c * RP.n - 1e-9) return k; } return 0; };
   const near = (x, y) => grid.get(key(Math.floor(x), Math.floor(y))) || [];
   const onSeg = (s, x, y) => { const g = SG[s], t = Math.max(0, Math.min(g[6], (x - g[0]) * g[4] + (y - g[1]) * g[5])); return [g[0] + g[4] * t, g[1] + g[5] * t]; };
   // the nearest line within R of (x, y): running your way (ux, uy) if asked, and then beside it, not out past its end
@@ -1199,11 +1448,11 @@ function railTrack(map, w, cfg, cache){
     const r0 = nearest(at[0], at[1], 0, 0, 3, 0);
     for (let j = 0; j < N; j++){
       X[j] = r0 ? r0.x : at[0]; Y[j] = r0 ? r0.y : at[1]; SEGI[j] = r0 ? r0.s : -1; W[j] = 1 / N;
-      if (!keep){ SC[j] = Math.min(1.25, Math.max(0.8, 1 + gauss() * RP.scale)); DT[j] = gauss() * 1.5 * DEG; }
+      if (!keep){ SC[j] = Math.min(1.25, Math.max(0.8, 1 + gauss() * RP.scale)); DT[j] = wrap(quarterOf(j) * Q + gauss() * 1.5 * DEG); }
     }
   };
   // carry on from a cached run of the same map and the same walk so far (everything up to where the inputs differ)
-  const st0 = markAt.get(0) || [0, 0], sig = [map, N, st0[0], st0[1], cfg.source, cfg.stride, cfg.snap].join('|');
+  const st0 = markAt.get(0) || [0, 0], sig = [map, N, st0[0], st0[1], cfg.source, cfg.stride, cfg.snap, PRIOR.join(',')].join('|');
   let k0 = 0, ST = [];
   if (cache && cache.sig === sig && cache.map === map){
     const same = (a, b) => Math.abs(a - b) < 1e-9;
@@ -1262,6 +1511,9 @@ function railTrack(map, w, cfg, cache){
     for (let i = 0; i < N; i++) if (Math.abs(last.X[i] - last.X[j]) < 0.7 && Math.abs(last.Y[i] - last.Y[j]) < 0.7) m += last.W[i];
     if (m > bw){ bw = m; bj = j; }
   }
+  // the way it turned out you were facing (the best guess's quarter turn), for the heading on screen and the raw trace
+  const kq = ((Math.round(wrap(last.DT[bj]) / Q) % 4) + 4) % 4, rotEff = wrap(rot + kq * Q);
+  const hsEff = kq ? hs0.map(h => wrap(h + rotEff)) : hs, rawEff = kq ? buildPath(hsEff, lens) : raw;
   const straight = new Array(n + 1), onMap = new Array(n), segOf = new Array(n + 1);
   for (let k = n - 1, j = bj; k >= 0; k--){ straight[k + 1] = [ST[k].X[j], ST[k].Y[j]]; onMap[k] = !ST[k].OFF[j]; segOf[k + 1] = ST[k].SG[j]; j = ST[k].A[j]; }
   straight[0] = start; segOf[0] = -1;
@@ -1279,7 +1531,7 @@ function railTrack(map, w, cfg, cache){
     }
     drawn.push(straight[k]);
   }
-  return { hs, lens, raw, straight, drawn, events, rot, onMap };
+  return { hs: hsEff, lens, raw: rawEff, straight, drawn, events, rot: rotEff, onMap };
 }
 
 function distToPath(pts, p){
@@ -1382,7 +1634,8 @@ const blankWalk = () => ({
   steps:[],            // {t: ms since walk start, g: gyro heading (rad, clockwise), c: compass heading or null, a: step bounce}
   trace:[],            // [t, gyro heading, strongest bounce, strongest upward bounce] about 10 times a second while recording
   anchors:[],          // {i: step count} when you tapped I'm at start
-  places:[],           // {i: step count, name} when you marked a place
+  places:[],           // {i: step count, name} when you marked a place (camera walks: ci, where in cam)
+  cam:[],              // camera walks: [t, x, y] about 10 times a second, metres from S (+y the way the camera faced); null where tracking was lost
   refG:null, refC:null,
   walkStart:0, elapsed:0, lastTraceT:-1e9,
   seen:{ uturns:0, joins:0 }
@@ -1405,6 +1658,10 @@ const S = {
   snap: store.get('snap', true),
   join: store.get('join', 'normal'),
   liveG:null, liveC:null, beta:0, gamma:0,
+  sensorT0:0, relT:-1e9, noGyro:false,     // when the sensors started; the last gyro reading (none: a phone without one)
+  dtEst:16.67, lastMotionT:0, quietUntil:0, gv:[0, 0, 9.81],   // motion readings' spacing (ms), the buzz, which way is up
+  mag:null, magState:'none', magSensor:null,                   // the magnetometer, where Chrome allows it
+  buzz: store.get('buzz', true),
   accG:{s:0,c:0,n:0}, accC:{s:0,c:0,n:0},
   gEst:9.81, sig:0, sMax:-Infinity, sMin:Infinity, bMax:0, uMax:0, inPeak:false, peakT:0, peakV:0, peakBar:0, lastStepT:0,
   peaks:[], beats:[],  // your last steps' peak bounce and times, for the step bar
@@ -1422,17 +1679,20 @@ const putWalk = o => { for (const k of WALK) S[k] = o[k]; };
 const stash = () => { if (S.mode === 'map') S.maps[S.sel] = takeWalk(); else S.live = takeWalk(); };
 // the map walks as they are right now (the selected one straight from S while it's on screen)
 const mapWalks = () => S.maps.map((w, i) => S.mode === 'map' && i === S.sel ? takeWalk() : w);
-const hasMap = () => mapWalks().some(w => w.steps.length >= 5);
+const hasMap = () => mapWalks().some(w => w.steps.length >= 5 || isCam(w));
+const hasWalk = w => w.steps.length > 0 || (w.cam && w.cam.length > 0);   // anything recorded on it
 
 /* ---------- sensors ---------- */
+// Made for Chrome on Android; Safari on iPhone still works.
+const ANDROID = /Android/i.test(navigator.userAgent);
 async function ensureSensors(){
   if (S.permitted) return true;
   if (!window.isSecureContext){
-    banner('Open this page over https://. iPhone only shares motion sensors with secure pages.');
+    banner('Open this page over https://. Phones only share motion sensors with secure pages.');
     return false;
   }
   try {
-    const reqs = [];
+    const reqs = [];                              // (only iPhone asks; Android allows motion sensors unless you blocked them)
     if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') reqs.push(DeviceMotionEvent.requestPermission());
     if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') reqs.push(DeviceOrientationEvent.requestPermission());
     const res = await Promise.all(reqs);
@@ -1446,29 +1706,80 @@ async function ensureSensors(){
   }
   window.addEventListener('devicemotion', onMotion);
   window.addEventListener('deviceorientation', onOrient);
+  window.addEventListener('deviceorientationabsolute', onOrientAbs);   // Android's compass
+  S.sensorT0 = performance.now();
+  startMagnetometer();
+  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {}); } catch(e){}   // ask Chrome to keep your walks
   S.permitted = true;
   setTimeout(() => {
-    if (!S.sensorsSeen) banner('No motion data is arriving. This needs a phone. On a laptop, open Settings and load the demo walk.');
+    if (!S.sensorsSeen && !CAM) banner(ANDROID ? 'No motion data is arriving. In Chrome, tap ⋮ › Settings › Site settings › Motion sensors, allow this site, then reload the page.'
+      : 'No motion data is arriving. This needs a phone. On a laptop, open Settings and load the demo walk.');
   }, 1800);
   return true;
+}
+// Chrome lets a page read the magnetometer only with chrome://flags/#enable-generic-sensor-extra-classes turned on.
+// When it can, each walk keeps the magnetic field with its heading trace: the steel in walls and floors makes a
+// pattern along each corridor that's the same every time, for matching the map by it later.
+function startMagnetometer(){
+  if (S.magSensor || typeof Magnetometer !== 'function') return;
+  try {
+    const m = new Magnetometer({ frequency: 10 });
+    m.addEventListener('reading', () => { if (m.x != null){ S.mag = [m.x, m.y, m.z]; if (S.magState !== 'on'){ S.magState = 'on'; ui(); } } });
+    m.addEventListener('error', () => { S.mag = null; S.magState = 'blocked'; ui(); });
+    m.start(); S.magSensor = m; S.magState = 'starting';
+  } catch(e){ S.magState = 'blocked'; }
+}
+// its strength and its up-down part (along gravity), so it doesn't matter how you hold the phone (µT)
+function magRow(){
+  const [x, y, z] = S.mag, g = S.gv, gl = Math.hypot(g[0], g[1], g[2]) || 1;
+  return [+Math.hypot(x, y, z).toFixed(1), +((x * g[0] + y * g[1] + z * g[2]) / gl).toFixed(1)];
 }
 
 function acc(a, h){ a.s += Math.sin(h); a.c += Math.cos(h); a.n++; }
 
+/* Headings, clockwise. Gyro: alpha of deviceorientation, which Chrome and Safari both work out from the gyroscope
+   (it turns with you, isn't bent by metal, slowly drifts). Compass: on Android the alpha of deviceorientationabsolute
+   (Chrome's mix of gyro and magnetometer, from north), on iPhone webkitCompassHeading. Held flat or tilted towards
+   you, minus alpha is exactly the way the top of the phone points. A phone with no gyroscope sends no gyro readings;
+   then the compass stands in. */
 function onOrient(e){
   if (e.alpha == null) return;
-  S.sensorsSeen = true;
-  S.liveG = wrap(-e.alpha * DEG);            // alpha grows counter-clockwise; flip to clockwise
+  S.sensorsSeen = true; S.relT = performance.now(); S.noGyro = false;
   if (typeof e.webkitCompassHeading === 'number' && e.webkitCompassHeading >= 0) S.liveC = wrap(e.webkitCompassHeading * DEG);
+  else if (e.absolute === true) S.liveC = wrap(-e.alpha * DEG);   // (some Android browsers send compass readings here)
   S.beta = e.beta || 0; S.gamma = e.gamma || 0;
+  headingSample(wrap(-e.alpha * DEG));        // alpha grows counter-clockwise; flip to clockwise
+}
+function onOrientAbs(e){
+  if (e.alpha == null) return;
+  S.sensorsSeen = true;
+  S.liveC = wrap(-e.alpha * DEG);
+  // which way the back camera looks (phone held up for a camera walk): the compass heading of the phone's -z axis
+  { const a = e.alpha * DEG, b = (e.beta || 0) * DEG, g = (e.gamma || 0) * DEG;
+    const vx = -Math.cos(a) * Math.sin(g) - Math.sin(a) * Math.sin(b) * Math.cos(g), vy = -Math.sin(a) * Math.sin(g) + Math.cos(a) * Math.sin(b) * Math.cos(g);
+    S.camC = Math.hypot(vx, vy) > 0.3 ? wrap(Math.atan2(vx, vy)) : S.liveC; }
+  const now = performance.now();
+  if (now - S.sensorT0 > 1000 && now - S.relT > 1000){   // a second of compass readings and no gyro ones
+    if (!S.noGyro){ S.noGyro = true; banner('This phone has no gyroscope, so headings come from the compass. It bends near metal, so maps come out rougher.'); }
+    S.beta = e.beta || 0; S.gamma = e.gamma || 0;
+    headingSample(S.liveC);
+  }
+}
+function headingSample(g){
+  S.liveG = g;
   if (S.recording){
     if (S.refG == null) S.refG = S.liveG;
-    if (S.refC == null && S.liveC != null) S.refC = S.liveC;
+    if (S.refC == null && S.liveC != null && !CAM) S.refC = S.liveC;   // (a camera walk takes the camera's compass heading instead)
     acc(S.accG, S.liveG);
     if (S.liveC != null) acc(S.accC, S.liveC);
     const t = Date.now() - S.walkStart;      // heading trace: tells a U-turn from walking round the bed
-    // also the strongest bounce since the last sample, so a walk file shows steps the counter missed
-    if (t - S.lastTraceT >= 100){ S.trace.push([t, +S.liveG.toFixed(3), +S.bMax.toFixed(2), +S.uMax.toFixed(2)]); S.lastTraceT = t; S.bMax = 0; S.uMax = 0; }
+    // also the strongest bounce since the last sample, so a walk file shows steps the counter missed, and the
+    // magnetic field where Chrome allows it
+    if (t - S.lastTraceT >= 100){
+      const row = [t, +S.liveG.toFixed(3), +S.bMax.toFixed(2), +S.uMax.toFixed(2)];
+      if (S.mag) row.push(...magRow());
+      S.trace.push(row); S.lastTraceT = t; S.bMax = 0; S.uMax = 0;
+    }
   }
 }
 
@@ -1476,16 +1787,24 @@ function onMotion(e){
   const a = e.accelerationIncludingGravity;
   if (!a || a.x == null) return;
   S.sensorsSeen = true;
-  const m = Math.hypot(a.x, a.y, a.z);
-  S.gEst += 0.01 * (m - S.gEst);             // slow gravity estimate
-  S.sig += 0.35 * ((m - S.gEst) - S.sig);    // smoothed bounce signal
+  // how far apart readings come (60 a second in Chrome and Safari; other browsers differ), so the smoothing below
+  // means the same in seconds on any phone
+  const now = performance.now();
+  if (S.lastMotionT) S.dtEst += 0.05 * (Math.min(60, Math.max(4, now - S.lastMotionT)) - S.dtEst);
+  S.lastMotionT = now;
+  if (now < S.quietUntil) return;           // the phone's own buzz for a step, not you
+  const m = Math.hypot(a.x, a.y, a.z), dt = S.dtEst;
+  S.gEst += (1 - Math.exp(-dt / 1650)) * (m - S.gEst);            // slow gravity estimate
+  S.sig += (1 - Math.exp(-dt / 38.7)) * ((m - S.gEst) - S.sig);   // smoothed bounce signal
+  const kv = 1 - Math.exp(-dt / 330);                              // which way is up (for the magnetic field)
+  S.gv[0] += kv * (a.x - S.gv[0]); S.gv[1] += kv * (a.y - S.gv[1]); S.gv[2] += kv * (a.z - S.gv[2]);
   S.spark.push(S.sig); if (S.spark.length > 200) S.spark.shift();
   if (S.recording){
     if (S.sig > S.sMax) S.sMax = S.sig;
     if (Math.abs(S.sig) > S.bMax) S.bMax = Math.abs(S.sig);
     if (S.sig > S.uMax) S.uMax = S.sig;           // upward bounce only: a soft step, not a dip
     if (S.sig < S.sMin) S.sMin = S.sig;
-    detect(performance.now());
+    detect(now);
   }
 }
 
@@ -1521,17 +1840,21 @@ function registerStep(t){
     const R = Math.hypot(a.s, a.c) / a.n;     // 1 = all samples agree, lower = turning
     return (R > 0.92 || live == null) ? Math.atan2(a.s, a.c) : live;
   };
-  const g = pick(S.accG, S.liveG);
   const c = pick(S.accC, S.liveC);
+  let g = pick(S.accG, S.liveG);
+  if (g == null && S.relT < 0) g = c;          // no gyro reading yet (a phone without a gyroscope): the compass stands in
   const amp = isFinite(S.sMax - S.sMin) ? S.sMax - S.sMin : 0;
   S.accG = {s:0,c:0,n:0}; S.accC = {s:0,c:0,n:0}; S.sMax = -Infinity; S.sMin = Infinity;
   S.steps.push({ t: Date.now() - S.walkStart, g: g == null ? 0 : +g.toFixed(4), c: c == null ? null : +c.toFixed(4), a: +amp.toFixed(2) });
   S.stepFlash = 1;
+  // a short buzz, so you feel each step that counts (and notice one that doesn't). The motion readings during it are
+  // skipped, so it can't look like a step.
+  if (S.buzz && !CAM && typeof navigator.vibrate === 'function'){ try { navigator.vibrate(15); } catch(e){} S.quietUntil = performance.now() + 70; }
   recompute(); ui(); saveSoon();
 }
 
 /* ---------- paths ---------- */
-const walkKey = w => [w.steps.length, w.anchors.length, w.places.map(p => p.i + p.name).join('/'), w.steps.length ? w.steps[w.steps.length - 1].t : 0].join(':');
+const walkKey = w => [w.steps.length, w.anchors.length, w.places.map(p => p.i + p.name + (p.ci >= 0 ? '@' + p.ci : '')).join('/'), w.steps.length ? w.steps[w.steps.length - 1].t : 0, w.cam ? w.cam.length : 0].join(':');
 // The map, from all the map walks. Worked out again when a walk or a setting changes; not on every step of the walk
 // you're recording (only when you mark a place there), since it works every walk out twice.
 function mapPaths(){
@@ -1539,7 +1862,7 @@ function mapPaths(){
   const key = ws.map((w, i) => rec && i === S.sel ? 'rec:' + w.places.length + ':' + w.anchors.length : walkKey(w)).join('|') + '|' + [S.stride, S.adaptive, S.snap, S.join, S.source].join();
   if (S.merged && S.merged.key === key) return S.merged;
   const idx = [], use = [];
-  ws.forEach((w, i) => { if (w.steps.length >= 3){ idx.push(i); use.push(w); } });
+  ws.forEach((w, i) => { if (w.steps.length >= 3 || isCam(w)){ idx.push(i); use.push(w); } });
   const m = use.length ? mergeWalks(use, S) : null;
   const gone = (m && m.dropped || []).map(d => Object.assign({ w: idx[d.j] }, d));
   S.merged = m ? Object.assign(m, { key, idx, gone }) : { key, idx, gone, lines:[], pts:[], gaps:new Set(), places:{}, walks:[], rots:[], axis:0 };
@@ -1558,19 +1881,19 @@ function keptMarks(w, i){
   const g = (S.merged && S.merged.gone || []).filter(d => d.w === i);
   return g.length ? Object.assign({}, w, { places: w.places.filter(p => !g.some(d => d.i === p.i && d.name === p.name)) }) : w;
 }
-// How a map walk sits on the first walk's frame: the merge says, or (while you're recording it) the compass for the
-// quarter turn and the walls for the exact angle
-function rotOf(i, axis){
-  if (!i) return 0;
+// How a map walk sits on the first walk's frame: the merge says, or (while you're recording it) its shape so far
+// against the map (pts: its own path), with the walls for the exact angle and the compass to decide when the shape
+// can't yet (under 4 m, or nothing to lay it on)
+function rotOf(i, axis, pts){
   const m = S.merged, k = m && m.idx ? m.idx.indexOf(i) : -1;
-  if (k >= 0 && !(S.recording && S.mode === 'map' && i === S.sel)) return m.rots[k];
+  if (k >= 0 && !(S.recording && S.mode === 'map' && i === S.sel)) return m.rots[k] || 0;
+  if (!i && !(m && m.cam)) return 0;                // the first walk is the map's frame (unless a camera walk is)
   const w0 = S.maps[0], w = i === S.sel && S.mode === 'map' ? S : S.maps[i];
-  let q = 0;
-  if (w.refC != null && w0.refC != null) q = Math.round(wrap(w.refC - w0.refC) / (Math.PI / 2)) * (Math.PI / 2);
+  const prior = w.refC != null && w0.refC != null ? wrap(w.refC - w0.refC) : 0;
   const A0 = m && m.walks.length ? m.axis : axis;
-  return wrap(q + wrap(4 * (A0 - axis - q)) / 4);
+  return bestTurn(pts || [], axis, m ? m.lines : null, A0, prior).rot;
 }
-const turned = (c, r) => !r ? c : Object.assign({}, c, { raw: c.raw.map(p => turn(p, r)), straight: c.straight.map(p => turn(p, r)), drawn: (c.drawn || c.straight).map(p => turn(p, r)), rot: r });
+const turned = (c, r) => !r ? c : Object.assign({}, c, { raw: c.raw.map(p => p && turn(p, r)), straight: c.straight.map(p => turn(p, r)), drawn: (c.drawn || c.straight).map(p => p && turn(p, r)), rot: r });
 // On the Live tab joining never goes fully off: it's how your walk finds the map
 const liveCfg = () => ({ stride:S.stride, adaptive:S.adaptive, snap:S.snap, source:S.source, join: S.join === 'off' ? 'normal' : S.join });
 function recompute(){
@@ -1584,9 +1907,14 @@ function recompute(){
   // this walk, its marks pinned to where the map has those places (so tapping Kitchen door puts you at the Kitchen
   // door pin, and a finished walk lines up with the map); the turn onto the map needs the walk's walls while it's new
   const M = mapPaths(), w = keptMarks(S, S.sel), names = Object.keys(M.places || {});
-  const k = M.idx ? M.idx.indexOf(S.sel) : -1, settled = !S.sel || (k >= 0 && !S.recording);
+  if (S.cam.length){                                // a camera walk: its path is the measurement, nothing to work out
+    const cc = camPaths(S), kk = M.idx ? M.idx.indexOf(S.sel) : -1;
+    S.cache = turned(cc, kk >= 0 && !S.recording ? (M.rots[kk] || 0) : 0);
+    return;
+  }
+  const k = M.idx ? M.idx.indexOf(S.sel) : -1, settled = (!S.sel && !M.cam) || (k >= 0 && !S.recording);
   let c = settled ? null : computePaths(w, S);
-  const rot = rotOf(S.sel, c ? c.axis : 0);
+  const rot = rotOf(S.sel, c ? c.axis : 0, c ? c.straight : null);
   if (w.places.length && names.length){
     const own = {};
     for (const nm of names) own[nm] = turn(M.places[nm], -rot);
@@ -1635,6 +1963,7 @@ function shownPaths(){
 function mainPts(){ return S.view === 'raw' ? S.cache.raw : S.cache.straight; }
 
 function draw(){
+  if (CAM){ requestAnimationFrame(draw); return; }   // (the camera view covers it)
   dpr = Math.min(window.devicePixelRatio || 1, 3);
   const r = sizeCanvas(cv), W = r.width, H = r.height;
   ctx.setTransform(dpr,0,0,dpr,0,0);
@@ -1699,7 +2028,7 @@ function draw(){
 
   // places you marked: where the walks agree they are. Names go beside, above or below their pin, wherever they
   // don't run into another name; where none of those is free, just the pin.
-  if (pins.length && (S.steps.length || S.recording || mapL)){
+  if (pins.length && (hasWalk(S) || S.recording || mapL)){
     ctx.font = '600 10.5px ' + getComputedStyle(document.body).fontFamily; ctx.textBaseline = 'middle';
     const boxes = [], hit = b => boxes.some(o => b[0] < o[2] && b[2] > o[0] && b[1] < o[3] && b[3] > o[1]);
     for (const [, p] of pins){ const X = sx(p[0]), Y = sy(p[1]); boxes.push([X - 6, Y - 7, X + 6, Y + 7]); }
@@ -1722,7 +2051,7 @@ function draw(){
 
   // start marker (not while the instructions sit in the middle of an empty screen)
   const X0 = sx(0), Y0 = sy(0);
-  if (S.steps.length || S.recording || mapL){
+  if (hasWalk(S) || S.recording || mapL){
     ctx.strokeStyle = COL.text; ctx.lineWidth = 2; ctx.fillStyle = COL.ink;
     ctx.beginPath(); ctx.arc(X0, Y0, 8, 0, TAU); ctx.fill(); ctx.stroke();
     ctx.fillStyle = COL.text; ctx.font = '700 9px ui-monospace, Menlo, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -1735,7 +2064,7 @@ function draw(){
   else { D[0] += (last[0] - D[0]) * .25; D[1] += (last[1] - D[1]) * .25; }
   const cx = sx(D[0]), cy = sy(D[1]), h = liveRel();
   const dotCol = S.view === 'raw' ? COL.raw : live && S.offMap ? COL.rec : COL.straight;
-  if (S.steps.length || S.recording){
+  if ((S.steps.length || S.recording) && !S.cam.length){
     ctx.save(); ctx.translate(cx, cy); ctx.rotate(h);
     const g = ctx.createLinearGradient(0, 0, 0, -46);
     g.addColorStop(0, 'rgba(230,238,247,.35)'); g.addColorStop(1, 'rgba(230,238,247,0)');
@@ -1794,32 +2123,35 @@ function ui(throttled){
   const now = performance.now();
   if (throttled && now - lastUi < 150) return;
   lastUi = now;
-  const n = S.steps.length, mp = mainPts(), last = mp[mp.length - 1];
+  const n = S.steps.length, mp = mainPts(), last = mp[mp.length - 1], camW = S.cam.length > 0, has = n > 0 || camW;
   $('vSteps').textContent = n;
-  $('vDist').textContent = S.cache.lens.reduce((a, l) => a + l, 0).toFixed(1);
+  $('vDist').textContent = (camW ? camLength(S.cam) : S.cache.lens.reduce((a, l) => a + l, 0)).toFixed(1);
   $('vHome').textContent = Math.hypot(last[0], last[1]).toFixed(1);
   const hd = ((Math.round(liveRel() / DEG) % 360) + 360) % 360;
   $('vHead').textContent = String(hd).padStart(3, '0');
   const el = S.elapsed + (S.recording ? Date.now() - S.segStart : 0);
   const live = S.mode === 'live', noMap = live && !hasMap();
   $('status').classList.toggle('rec', S.recording);
-  $('statusText').textContent = S.recording ? (live ? 'Live ' : 'Rec ') + fmtTime(el) : (n ? 'Paused ' + fmtTime(el) : 'Idle');
+  $('statusText').textContent = S.recording ? (CAM ? 'Camera ' : live ? 'Live ' : 'Rec ') + fmtTime(el) : (has ? (camW ? 'Camera walk ' : 'Paused ') + fmtTime(el) : 'Idle');
   const b = $('btnStart');
-  b.textContent = S.recording ? 'Stop' : (n ? 'Resume' : 'Start');
+  b.textContent = S.recording ? 'Stop' : camW ? (S.maps.length < MAXWALKS && !live ? 'New walk' : 'Done') : (n ? 'Resume' : 'Start');
   b.classList.toggle('rec', S.recording);
-  const empty = !(n > 0 || S.recording);
+  const empty = !(has || S.recording);
+  $('camBtn').hidden = !(empty && !live && S.ar);
   $('empty').hidden = !empty;
   if (empty){
     const later = !live && S.sel > 0;
     $('empty').classList.toggle('card', (live && !noMap) || later);
-    $('emptyH').textContent = live ? (noMap ? 'No map yet' : 'Stand at S, then tap Start') : later ? 'Walk ' + (S.sel + 1) + ': start at S' : 'Tap Start, then walk';
+    $('emptyH').textContent = live ? (noMap ? 'No map yet' : 'Stand at S, then tap Start') : later ? 'Walk ' + (S.sel + 1) + ': start at S' : S.ar ? 'Map your home' : 'Tap Start, then walk';
     $('emptyP').textContent = live ? (noMap ? 'Walk your route on the Map tab first. That walk becomes the map you walk on here.'
         : 'Face the way you faced when you started the map, then walk as usual. Or tap Start, then Mark place where you are standing.')
-      : later ? 'Start where walk 1 started, facing the same way. Mark the same places with the same names; your route can be different.'
+      : later ? (S.ar ? 'Start where walk 1 started. With the camera, facing any way is fine; for a step walk (Start), face the way walk 1 did. Mark the same places with the same names.'
+                      : 'Start where walk 1 started, facing the same way. Mark the same places with the same names; your route can be different.')
+      : S.ar ? 'Most accurate: Map with the camera, then hold the phone up and walk your route from S. Or tap Start to count steps instead (phone flat, screen up).'
       : 'Hold the phone flat in front of you, screen up, facing along a wall. Tap Mark place each time you stand in a doorway.';
   }
-  $('btnHome').hidden = n < 4;
-  $('btnMark').hidden = !(S.recording || n > 0) || noMap;
+  $('btnHome').hidden = n < 4 || camW;
+  $('btnMark').hidden = !(S.recording || n > 0) || noMap || camW;
   $('tilt').hidden = !(S.recording && (Math.abs(S.beta) > 55 || Math.abs(S.gamma) > 45)) || !$('banner').hidden;
   $('offMap').hidden = !(live && S.offMap) || !$('tilt').hidden || !$('banner').hidden;
   document.querySelectorAll('#modeSeg button').forEach(x => x.setAttribute('aria-pressed', x.dataset.m === S.mode));
@@ -1827,18 +2159,31 @@ function ui(throttled){
   const ws = $('walkSeg');
   ws.hidden = live;
   if (!live){
-    const want = S.maps.map((w, i) => 'w' + i + (i === S.sel ? '*' : '')).join(',') + (S.maps.length < MAXWALKS && mapWalks()[S.maps.length - 1].steps.length ? ',add' : '');
+    const mw = mapWalks(), want = mw.map((w, i) => 'w' + i + (i === S.sel ? '*' : '') + (w.cam.length ? 'c' : '')).join(',') + (S.maps.length < MAXWALKS && hasWalk(mw[S.maps.length - 1]) ? ',add' : '');
     if (ws.dataset.k !== want){
       ws.dataset.k = want; ws.textContent = '';
-      S.maps.forEach((w, i) => { const x = document.createElement('button'); x.textContent = 'Walk ' + (i + 1); x.setAttribute('aria-pressed', i === S.sel); x.onclick = () => selectWalk(i); ws.appendChild(x); });
+      mw.forEach((w, i) => { const x = document.createElement('button'); x.textContent = 'Walk ' + (i + 1); if (w.cam.length){ const sm = document.createElement('small'); sm.textContent = ' cam'; x.appendChild(sm); } x.setAttribute('aria-pressed', i === S.sel); x.onclick = () => selectWalk(i); ws.appendChild(x); });
       if (want.endsWith(',add')){ const x = document.createElement('button'); x.className = 'add'; x.textContent = '+ Walk ' + (S.maps.length + 1); x.onclick = addWalk; ws.appendChild(x); }
     }
   }
+  $('viewSeg').hidden = camW && !live;               // (a camera walk has no raw and corrected: it's measured)
   document.querySelectorAll('#viewSeg button').forEach(x => x.setAttribute('aria-pressed', x.dataset.v === S.view));
   document.querySelectorAll('#srcSeg button').forEach(x => x.setAttribute('aria-pressed', x.dataset.s === S.source));
   document.querySelectorAll('#joinSeg button').forEach(x => x.setAttribute('aria-pressed', x.dataset.j === S.join));
   $('adaptive').setAttribute('aria-checked', S.adaptive);
   $('snap').setAttribute('aria-checked', S.snap);
+  $('buzz').setAttribute('aria-checked', S.buzz);
+  $('buzzField').hidden = typeof navigator.vibrate !== 'function';
+  $('magField').hidden = !ANDROID && typeof Magnetometer !== 'function';
+  $('magCopy').hidden = !ANDROID || typeof Magnetometer === 'function';
+  $('camHint').textContent = S.ar ? 'On an empty walk (Walk 1, or + Walk), tap Map with the camera. Hold the phone up, camera facing where you walk, and walk your route: Chrome follows the phone with ARCore (the camera and motion sensors together), to within centimetres, so one walk makes the map. Mark places as you go. If your steps are counted on the way, they also set your stride for Live.'
+    : S.ar === false ? 'Not available on this phone or browser. It needs Chrome on an ARCore phone with Google Play Services for AR (from the Play Store). Step walks still work.'
+    : 'Checking whether this phone can do it…';
+  $('magHint').textContent = typeof Magnetometer !== 'function'
+    ? 'Not recorded. Chrome only lets a page read the magnetometer after you open chrome://flags/#enable-generic-sensor-extra-classes, set it to Enabled and restart Chrome. Walks recorded with it can later be matched to your map by your home’s magnetic pattern, which steps alone can’t give.'
+    : S.magState === 'blocked' ? 'Chrome blocked the magnetometer for this page. Allow motion sensors for this site in Chrome’s Site settings.'
+    : S.magState === 'on' ? 'Recorded with every walk, for matching your map by its magnetic pattern later.'
+    : 'Will be recorded with every walk once you tap Start.';
   $('stride').value = S.stride; $('strideOut').textContent = S.stride.toFixed(2) + ' m';
   $('thr').value = S.thr; $('thrOut').textContent = S.thr.toFixed(1) + ' m/s²';
   $('sparkThr').textContent = 'threshold ' + S.thr.toFixed(1);
@@ -1859,17 +2204,197 @@ async function keepAwake(on){
 }
 let hiddenWhileRec = false;
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden' && S.recording) hiddenWhileRec = true;
+  if (document.visibilityState === 'hidden' && S.recording && !CAM) hiddenWhileRec = true;   // (going into the camera view isn't the screen going off)
   if (document.visibilityState === 'visible'){
     if (S.recording) keepAwake(true);
     if (hiddenWhileRec){ hiddenWhileRec = false; toast('Screen was off. Steps in that time were not counted.'); }
   }
 });
 
+/* ---------- camera walks (ARCore, through WebXR) ---------- */
+/* Chrome on Android can hand a page the phone's position from ARCore: what the camera sees and the motion sensors,
+   together, the way street maps are made on foot. Held up, camera facing where you walk, the phone knows where it is
+   to within centimetres, where counting steps is off by a metre or two. Needs an ARCore phone with Google Play Services
+   for AR; Chrome asks to use the camera. The camera view fills the screen, with this page's #xr panel drawn over it. */
+let CAM = null;
+S.ar = null;
+try {
+  if (navigator.xr && navigator.xr.isSessionSupported) navigator.xr.isSessionSupported('immersive-ar').then(ok => { S.ar = !!ok; ui(); }, () => { S.ar = false; ui(); });
+  else S.ar = false;
+} catch(e){ S.ar = false; }
+$('xr').addEventListener('beforexrselect', e => e.preventDefault());   // taps on the panel are for its buttons, not AR
+
+async function startCam(){
+  if (S.recording || CAM) return;
+  if (S.mode !== 'map'){ toast('Camera walks make the map: open the Map tab'); return; }
+  if (hasWalk(S)){ toast('This walk already has something on it. Tap + Walk for a camera walk.'); return; }
+  const root = $('xr');
+  xrPlaces(false); $('xrHint').hidden = false; $('xrSay').hidden = true;
+  $('xrStatus').textContent = 'Starting the camera…'; $('xrStatus').className = 'xr-chip finding';
+  let session;
+  try {
+    session = await navigator.xr.requestSession('immersive-ar', { requiredFeatures: ['local', 'dom-overlay'], domOverlay: { root } });   // (no panel, no Done button: then don't start)
+  } catch(e){
+    // Chrome says NotSupportedError for everything after asking: no ARCore, AR services declined, or the camera refused
+    banner(e && e.name === 'NotSupportedError' && S.ar ? 'Camera tracking didn’t start. Allow it when Chrome asks, and install Google Play Services for AR if it offers. If you said no before, allow AR for this site in Chrome’s Site settings.'
+      : e && e.name === 'NotSupportedError' ? 'This phone can’t do camera tracking in Chrome. It needs an ARCore phone with Google Play Services for AR (Play Store).'
+      : e && (e.name === 'NotAllowedError' || e.name === 'SecurityError') ? 'Camera tracking needs the camera. Tap Map with the camera again and allow it when Chrome asks.'
+      : 'Couldn’t start camera tracking (' + ((e && e.message) || e) + ').');
+    return;
+  }
+  root.hidden = false;
+  try {
+    const gl = document.createElement('canvas').getContext('webgl', { xrCompatible: true });
+    session.updateRenderState({ baseLayer: new XRWebGLLayer(session, gl, { antialias: false, depth: false }) });
+    const ref = await session.requestReferenceSpace('local');
+    CAM = { session, ref, gl, origin: null, u: null, state: 'finding', head: 0, lastT: -1e9, lastP: null, drawT: 0, saveT: 0, done: false };
+    session.addEventListener('end', camEnded);
+    if (ref.addEventListener) ref.addEventListener('reset', () => { if (S.cam.length && S.cam[S.cam.length - 1]) S.cam.push(null); });   // ARCore moved its origin
+    ensureSensors();                              // steps too: counted on the way, they set your stride
+    start();
+    S.refC = null;                                // set when tracking starts: which way the camera faced at S
+    session.requestAnimationFrame(camFrame);
+  } catch(e){
+    try { session.end().catch(() => {}); } catch(_){}
+    root.hidden = true; CAM = null;
+    banner('Couldn’t start camera tracking (' + ((e && e.message) || e) + ').');
+  }
+}
+$('camBtn').onclick = startCam;
+
+// Each camera frame: where the phone is (metres from S along the floor, +y the way it faced at S)
+function camFrame(time, frame){
+  const C = CAM; if (!C) return;
+  const ses = frame.session; ses.requestAnimationFrame(camFrame);
+  const layer = ses.renderState.baseLayer, gl = C.gl;
+  if (layer && gl){ gl.bindFramebuffer(gl.FRAMEBUFFER, layer.framebuffer); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); }   // see-through: the camera shows
+  let pose = null; try { pose = frame.getViewerPose(C.ref); } catch(e){}
+  if (!pose || pose.emulatedPosition){                      // not tracking (yet, or lost): the path breaks here
+    if (C.origin && C.state !== 'lost'){ C.state = 'lost'; if (S.cam.length && S.cam[S.cam.length - 1]) S.cam.push(null); }
+    camDraw(); return;
+  }
+  const p = pose.transform.position, q = pose.transform.orientation;
+  // which way the camera looks, along the floor (or where the top of the phone points, if it looks straight down)
+  let fx = -2 * (q.x * q.z + q.w * q.y), fz = -(1 - 2 * (q.x * q.x + q.y * q.y));
+  if (Math.hypot(fx, fz) < 0.3){
+    fx = 2 * (q.x * q.y - q.z * q.w); fz = 2 * (q.y * q.z + q.x * q.w);
+    if (2 * (q.x * q.w - q.y * q.z) > 0){ fx = -fx; fz = -fz; }   // looking up, the top of the phone points back at you
+  }
+  if (!C.origin){ const l = Math.hypot(fx, fz) || 1; C.origin = [p.x, p.z]; C.u = [fx / l, fz / l]; if (S.camC != null) S.refC = S.camC; }
+  const u = C.u, r = [-u[1], u[0]], dx = p.x - C.origin[0], dz = p.z - C.origin[1];   // (right = forward × up)
+  const X = dx * r[0] + dz * r[1], Y = dx * u[0] + dz * u[1];
+  C.head = Math.atan2(fx * r[0] + fz * r[1], fx * u[0] + fz * u[1]);
+  if (C.state !== 'ok' && !C.everOk){ C.everOk = true; xrSay('Tracking. Walk your route now.'); }
+  C.state = 'ok';
+  const t = Date.now() - S.walkStart;
+  if (t - C.lastT >= 90){
+    const last = C.lastP, cont = S.cam.length && S.cam[S.cam.length - 1], dt = (t - C.lastT) / 1000;
+    if (last && cont && Math.hypot(X - last[0], Y - last[1]) > Math.max(0.8, 2.5 * dt)) S.cam.push(null);   // a jump (ARCore placed itself again): not walkable
+    S.cam.push([t, +X.toFixed(3), +Y.toFixed(3)]); C.lastT = t; C.lastP = [X, Y];
+    if (t - C.saveT > 5000){ C.saveT = t; saveSoon(); }
+  }
+  camDraw();
+}
+
+// The panel over the camera: status, distance, and a small map of this walk so far
+function camDraw(){
+  const C = CAM; if (!C) return;
+  const now = performance.now(); if (now - C.drawT < 60) return; C.drawT = now;
+  const put = (id, v) => { const e = $(id); if (e.textContent !== v) e.textContent = v; };
+  put('xrStatus', C.state === 'ok' ? 'Tracking' : C.state === 'lost' ? 'Lost: point the camera at the room and hold still' : 'Finding the room: stay at S, move the phone slowly');
+  if ($('xrStatus').className !== 'xr-chip ' + C.state) $('xrStatus').className = 'xr-chip ' + C.state;
+  if (now - (C.lenT || 0) > 500){ C.len = camLength(S.cam); C.lenT = now; }
+  put('xrDist', (C.len || 0).toFixed(1));
+  put('xrTime', fmtTime(S.elapsed + Date.now() - S.segStart));
+  if (!C.font) C.font = getComputedStyle(document.body).fontFamily;
+  if ((C.len || 0) > 4) $('xrHint').hidden = true;
+  const c = $('xrMap'), rr = sizeCanvas(c), W = rr.width, H = rr.height, g = c.getContext('2d');
+  g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+  const pts = S.cam;
+  let x0 = -2, x1 = 2, y0 = -2, y1 = 2;
+  for (const e of pts){ if (!e) continue; if (e[1] < x0) x0 = e[1]; if (e[1] > x1) x1 = e[1]; if (e[2] < y0) y0 = e[2]; if (e[2] > y1) y1 = e[2]; }
+  const pad = 18, sc = Math.min((W - 2 * pad) / (x1 - x0), (H - 2 * pad) / (y1 - y0));
+  const sx = x => W / 2 + (x - (x0 + x1) / 2) * sc, sy = y => H / 2 - (y - (y0 + y1) / 2) * sc;
+  g.lineJoin = 'round'; g.lineCap = 'round'; g.strokeStyle = COL.straight; g.lineWidth = 3; g.beginPath();
+  let pen = false;
+  for (let k = 0; k < pts.length; k++){                 // (your hand's sway evened out over a few readings)
+    if (!pts[k]){ pen = false; continue; }
+    let x = 0, y = 0, c = 0;
+    for (let i = k - 2; i <= k + 2; i++) if (pts[i]){ x += pts[i][1]; y += pts[i][2]; c++; } else if (i >= 0 && i < pts.length && i !== k){ if (i < k){ x = 0; y = 0; c = 0; } else break; }
+    x /= c; y /= c;
+    if (pen) g.lineTo(sx(x), sy(y)); else g.moveTo(sx(x), sy(y)); pen = true;
+  }
+  g.stroke();
+  g.font = '600 10.5px ' + C.font; g.textBaseline = 'middle'; g.textAlign = 'left';
+  for (const m of S.places){
+    const e = m.ci >= 0 ? pts[m.ci] : null; if (!e) continue;
+    const X = sx(e[1]), Y = sy(e[2]);
+    g.fillStyle = COL.raw; g.beginPath(); g.moveTo(X, Y - 6); g.lineTo(X + 5, Y); g.lineTo(X, Y + 6); g.lineTo(X - 5, Y); g.closePath(); g.fill();
+    g.fillStyle = COL.text; g.fillText(m.name, X + 8, Y);
+  }
+  g.strokeStyle = COL.text; g.lineWidth = 2; g.fillStyle = COL.ink;
+  g.beginPath(); g.arc(sx(0), sy(0), 7, 0, TAU); g.fill(); g.stroke();
+  g.fillStyle = COL.text; g.font = '700 8px ' + C.font; g.textAlign = 'center'; g.fillText('S', sx(0), sy(0) + .5);
+  if (C.lastP){
+    const X = sx(C.lastP[0]), Y = sy(C.lastP[1]);
+    g.save(); g.translate(X, Y); g.rotate(C.head);
+    g.fillStyle = 'rgba(230,238,247,.35)'; g.beginPath(); g.moveTo(0, 0); g.arc(0, 0, 30, -Math.PI / 2 - .4, -Math.PI / 2 + .4); g.closePath(); g.fill();
+    g.restore();
+    g.fillStyle = C.state === 'ok' ? COL.straight : COL.rec; g.strokeStyle = COL.ink; g.lineWidth = 2;
+    g.beginPath(); g.arc(X, Y, 6.5, 0, TAU); g.fill(); g.stroke();
+  }
+}
+let xrSayT;
+function xrSay(msg){ const e = $('xrSay'); e.textContent = msg; e.hidden = false; clearTimeout(xrSayT); xrSayT = setTimeout(() => e.hidden = true, 2600); }
+// Mark place, on the camera panel (the usual sheet is behind the camera view)
+function xrPlaces(on){
+  $('xrPlaces').hidden = !on; $('xrBottom').hidden = on; $('xrMap').hidden = on;
+  if (!on){ $('xrPlNew').blur(); return; }
+  const list = $('xrPlList'); list.textContent = '';
+  for (const nm of placeNames()){ const b = document.createElement('button'); b.className = 'btn small'; b.textContent = nm; b.onclick = () => camMark(nm); list.appendChild(b); }
+  $('xrPlUndo').hidden = !S.places.length;
+  $('xrPlNew').value = '';
+}
+function camMark(nm){
+  nm = (nm || '').trim().slice(0, 40); if (!nm) return;
+  let k = S.cam.length - 1; while (k >= 0 && !S.cam[k]) k--;
+  if (k < 0 || !CAM || CAM.state !== 'ok'){ xrSay('Wait until it says Tracking, then mark'); return; }
+  S.places.push({ i: S.steps.length, name: nm, ci: k });
+  xrPlaces(false); xrSay('Marked ' + nm); saveSoon();
+}
+$('xrMark').onclick = () => xrPlaces(true);
+$('xrPlCancel').onclick = () => xrPlaces(false);
+$('xrPlAdd').onclick = () => camMark($('xrPlNew').value);
+$('xrPlNew').onkeydown = e => { if (e.key === 'Enter'){ e.preventDefault(); camMark($('xrPlNew').value); } };
+$('xrPlUndo').onclick = () => { const m = S.places.pop(); xrPlaces(false); if (m) xrSay('Removed ' + m.name); saveSoon(); };
+$('xrDone').onclick = () => { if (!CAM) return; CAM.done = true; CAM.session.end().catch(camEnded); };
+// The camera walk is over (Done, or Chrome left AR: back button, another app)
+function camEnded(){
+  if (!CAM) return;
+  const C = CAM; CAM = null;
+  $('xr').hidden = true; $('xrPlNew').blur();
+  try { const x = C.gl && C.gl.getExtension('WEBGL_lose_context'); if (x) x.loseContext(); } catch(e){}
+  while (S.cam.length && !S.cam[S.cam.length - 1]) S.cam.pop();
+  if (S.recording) stop();
+  S.merged = null;
+  // your stride, from how far the camera says you went (the path with your hand's sway smoothed out) over the steps
+  // counted on the way
+  const n = S.steps.length, len = camLength(S.cam);
+  if (n >= 20 && len >= 8){ const st = len / n; if (st >= 0.45 && st <= 0.95){ setStride(st); recompute(); ui(); toast('Camera walk saved. Stride set to ' + S.stride.toFixed(2) + ' m (' + n + ' steps over ' + len.toFixed(1) + ' m)');
+    if (!C.done) banner('The camera walk stopped (back gesture, another app or the screen going off). What you walked is saved as Walk ' + (S.sel + 1) + '. For the rest, go back to S, tap + Walk, then Map with the camera; it lines up with this one.');
+    return; } }
+  recompute(); ui();
+  toast(len >= 3 && isCam(S) ? 'Camera walk saved: ' + len.toFixed(1) + ' m' : 'That camera walk was too short to use. Clear it and try again.');
+  // Chrome stopped AR without Done (the back gesture, another app, the power button): it can't carry on, but another
+  // camera walk from S lines up with this one by itself
+  if (!C.done && isCam(S)) banner('The camera walk stopped (back gesture, another app or the screen going off). What you walked is saved as Walk ' + (S.sel + 1) + '. For the rest, go back to S, tap + Walk, then Map with the camera; it lines up with this one.');
+}
+
 /* ---------- controls ---------- */
 function resetWalk(){ putWalk(blankWalk()); }
 function start(){
   if (!S.steps.length){ resetWalk(); S.refG = S.liveG; S.refC = S.liveC; S.walkStart = Date.now(); recompute(); }
+  if (!(history.state && history.state.walk)) try { history.pushState({ walk: 1 }, ''); } catch(e){}
   S.accG = {s:0,c:0,n:0}; S.accC = {s:0,c:0,n:0}; S.sMax = -Infinity; S.sMin = Infinity;
   S.inPeak = false; S.lastStepT = performance.now(); S.peaks = []; S.beats = [];
   S.segStart = Date.now(); S.recording = true;
@@ -1879,8 +2404,14 @@ function stop(){
   S.recording = false; S.elapsed += Date.now() - S.segStart;
   keepAwake(false); save(); recompute(); ui();
 }
+// Android's back gesture is easy to make by accident while walking: during a walk it asks you to stop first
+window.addEventListener('popstate', () => {
+  if (S.recording){ try { history.pushState({ walk: 1 }, ''); } catch(e){} toast('You’re recording. Tap Stop first, then go back.'); }
+});
 $('btnStart').onclick = async () => {
+  if (CAM){ CAM.done = true; CAM.session.end().catch(camEnded); return; }
   if (S.recording){ stop(); return; }
+  if (S.cam.length){ if (S.mode === 'map' && S.maps.length < MAXWALKS) addWalk(); else toast('This camera walk is done. Clear it to redo it.'); return; }
   if (S.mode === 'live' && !hasMap()){ toast('Walk your map on the Map tab first'); return; }
   if (!(await ensureSensors())) return;
   $('banner').hidden = true;
@@ -1981,7 +2512,7 @@ $('placeBg').onclick = () => openPlaces(false);
 let clearArmed = null;
 $('btnClear').onclick = () => {
   const b = $('btnClear'), several = S.mode === 'map' && S.maps.length > 1;
-  if (!S.steps.length && !S.recording && !several) return;
+  if (!hasWalk(S) && !S.recording && !several) return;
   if (!clearArmed){
     b.textContent = several ? 'Remove walk ' + (S.sel + 1) + '?' : 'Tap to confirm'; b.classList.add('armed');
     clearArmed = setTimeout(() => { clearArmed = null; b.textContent = 'Clear'; b.classList.remove('armed'); }, 2500);
@@ -2006,6 +2537,11 @@ document.querySelectorAll('#srcSeg button').forEach(btn => btn.onclick = () => {
   recompute(); ui();
 });
 document.querySelectorAll('#joinSeg button').forEach(btn => btn.onclick = () => { S.join = btn.dataset.j; store.set('join', S.join); recompute(); ui(); });
+$('buzz').onclick = () => { S.buzz = !S.buzz; store.set('buzz', S.buzz); ui(); };
+$('magCopy').onclick = async () => {
+  try { await navigator.clipboard.writeText('chrome://flags/#enable-generic-sensor-extra-classes'); toast('Copied. Paste it into Chrome’s address bar.'); }
+  catch(e){ toast('Type chrome://flags into the address bar and search for Generic Sensor Extra Classes.'); }
+};
 for (const id of ['adaptive', 'snap']){
   $(id).onclick = () => { S[id] = !S[id]; store.set(id, S[id]); recompute(); ui(); };
 }
@@ -2033,7 +2569,8 @@ $('sheetBg').onclick = () => openSheet(false);
 function snapshot(w){
   w = w || S;
   return { app:'pathtrace', version:3, exported:new Date().toISOString(), stride:S.stride, threshold:S.thr, source:S.source,
-    refG:w.refG, refC:w.refC, elapsedMs:w.elapsed, steps:w.steps, anchors:w.anchors, places:w.places, trace:w.trace };
+    refG:w.refG, refC:w.refC, elapsedMs:w.elapsed, steps:w.steps, anchors:w.anchors, places:w.places, trace:w.trace,
+    ...(w.cam && w.cam.length ? { cam: w.cam } : {}) };
 }
 // each map walk under its own key (walk 1 keeps the old name, so a walk saved by an older version is your map)
 const mapKey = i => i ? 'walk' + (i + 1) : 'walk';
@@ -2055,11 +2592,12 @@ function parseWalk(d){
     .map(s => ({ t:s.t|0, g:s.g, c: typeof s.c === 'number' ? s.c : null, a: typeof s.a === 'number' ? s.a : 0 }));
   w.trace = Array.isArray(d.trace) ? d.trace.filter(p => Array.isArray(p) && p.length >= 2) : [];
   w.anchors = Array.isArray(d.anchors) ? d.anchors.filter(a => a && a.i > 0) : [];
-  w.places = Array.isArray(d.places) ? d.places.filter(p => p && typeof p.name === 'string' && p.name && p.i >= 0).map(p => ({ i: p.i | 0, name: p.name.slice(0, 40) })) : [];
+  w.places = Array.isArray(d.places) ? d.places.filter(p => p && typeof p.name === 'string' && p.name && p.i >= 0).map(p => Object.assign({ i: p.i | 0, name: p.name.slice(0, 40) }, p.ci >= 0 ? { ci: p.ci | 0 } : {})) : [];
+  w.cam = Array.isArray(d.cam) ? d.cam.map(e => Array.isArray(e) && e.length >= 3 && isFinite(e[1]) && isFinite(e[2]) ? [e[0] | 0, +e[1], +e[2]] : null) : [];
   w.refG = typeof d.refG === 'number' ? d.refG : null;
   w.refC = typeof d.refC === 'number' ? d.refC : null;
   w.elapsed = d.elapsedMs || 0;
-  const lastT = w.steps.length ? w.steps[w.steps.length - 1].t : 0;
+  const camT = w.cam.filter(Boolean), lastT = Math.max(w.steps.length ? w.steps[w.steps.length - 1].t : 0, camT.length ? camT[camT.length - 1][0] : 0);
   w.walkStart = Date.now() - lastT - 1000;   // a resumed walk carries on the same clock
   return w;
 }
@@ -2079,7 +2617,7 @@ function dataURLtoBlob(u){
 }
 $('btnExport').onclick = async () => {
   const live = S.mode === 'live', maps = mapWalks();
-  if (!S.steps.length && !(maps.some(w => w.steps.length) && !live)){ toast('Nothing to export yet. Record a walk first.'); return; }
+  if (!hasWalk(S) && !(maps.some(hasWalk) && !live)){ toast('Nothing to export yet. Record a walk first.'); return; }
   const d = new Date(), name = (live ? 'live-' : 'map-') + d.toISOString().slice(0,16).replace(/[:T]/g, '-');
   // the walk on screen, and with it every map walk (a live walk only makes sense with its map)
   const data = Object.assign(snapshot(), { mode: S.mode, sel: S.sel, maps: maps.map(w => snapshot(w)) });
@@ -2095,6 +2633,8 @@ $('btnExport').onclick = async () => {
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
   }
 };
+// (on Android, apps like WhatsApp or Drive can hand over a .json without saying it's JSON, so a type filter would grey it out)
+if (ANDROID) $('importFile').removeAttribute('accept');
 $('importFile').onchange = e => {
   const f = e.target.files[0]; if (!f) return;
   const rd = new FileReader();
@@ -2127,16 +2667,18 @@ $('demoBtn').onclick = () => {
   toast(S.mode === 'live' ? 'Demo: a second walk, tracked on the bedroom map' : 'Demo: a bedroom walk, raw and corrected');
 };
 
+window.__pathtrace = () => { const m = mapPaths(); return { rots: m.rots, idx: m.idx, places: m.places, lines: m.lines.length, cam: !!m.cam, ref: m.ref, axis: m.axis, stride: S.stride, sel: S.sel, mode: S.mode, rot: S.cache.rot || 0 }; };
+
 /* ---------- boot ---------- */
 try {
-  const rec = k => { const d = store.get(k, null); return d && Array.isArray(d.steps) && d.steps.length ? parseWalk(d) : blankWalk(); };
+  const rec = k => { const d = store.get(k, null); return d && Array.isArray(d.steps) && (d.steps.length || (Array.isArray(d.cam) && d.cam.length)) ? parseWalk(d) : blankWalk(); };
   const count = Math.min(MAXWALKS, Math.max(1, store.get('mapCount', 1) | 0));
   S.maps = Array.from({ length: count }, (_, i) => rec(mapKey(i)));
-  while (S.maps.length > 1 && !S.maps[S.maps.length - 1].steps.length && S.maps.length - 1 !== store.get('sel', 0)) S.maps.pop();
+  while (S.maps.length > 1 && !hasWalk(S.maps[S.maps.length - 1]) && S.maps.length - 1 !== store.get('sel', 0)) S.maps.pop();
   S.sel = Math.min(S.maps.length - 1, Math.max(0, store.get('sel', 0) | 0));
   S.live = rec('live');
   putWalk(S.mode === 'map' ? S.maps[S.sel] : S.live);
-  if (S.steps.length) toast(S.mode === 'live' ? 'Restored your live walk' : S.maps.length > 1 ? 'Restored your ' + S.maps.length + ' map walks' : 'Restored your last walk');
+  if (hasWalk(S)) toast(S.mode === 'live' ? 'Restored your live walk' : S.maps.length > 1 ? 'Restored your ' + S.maps.length + ' map walks' : 'Restored your last walk');
 } catch(e){}
 recompute(); S.seen = { ...S.cache.events }; ui();
 requestAnimationFrame(draw);
