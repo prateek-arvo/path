@@ -123,6 +123,12 @@ footer{display:flex;flex-direction:column;gap:10px;background:var(--panel);borde
 .btn.primary.rec{background:var(--rec);color:#fff}
 .btn.armed{border-color:var(--rec);color:var(--rec)}
 .btn.small{height:40px;padding:0 14px;font-size:14px;border-radius:10px}
+a.btn{display:inline-flex;align-items:center;justify-content:center;text-decoration:none}
+.help{margin:6px 0 4px;padding-left:22px;display:flex;flex-direction:column;gap:12px;line-height:1.45;font-size:14.5px}
+.help li::marker{color:var(--straight);font-weight:700}
+.help .now{color:var(--raw);font-weight:600}
+.help .btn{margin-top:8px}
+.diag{margin:0;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--ink);font:500 11.5px/1.5 var(--mono);color:var(--muted);white-space:pre-wrap;overflow-wrap:anywhere;-webkit-user-select:text;user-select:text}
 
 .sheet-bg{position:fixed;inset:0;background:rgba(3,9,16,.6);z-index:10}
 .sheet{position:fixed;left:0;right:0;bottom:0;max-height:86%;overflow-y:auto;z-index:11;background:var(--panel);
@@ -239,6 +245,25 @@ label.file input{position:absolute;inset:0;opacity:0}
   <div id="xrBottom" class="xr-bottom"><button id="xrMark" class="btn">Mark place</button><button id="xrDone" class="btn primary">Done</button></div>
 </div>
 
+<div id="camHelpBg" class="sheet-bg" hidden></div>
+<section id="camHelp" class="sheet" hidden aria-label="Camera tracking help">
+  <div class="sheet-head"><h2 id="camHelpH">Camera tracking didn’t start</h2><button id="camHelpClose" class="btn small">Close</button></div>
+  <p class="hint" id="camHelpWhy"></p>
+  <ol class="help">
+    <li id="camStepChrome"><b>Open the page in the Chrome app.</b> Not inside WhatsApp, Gmail or another app: there, tap ⋮ › Open in Chrome.</li>
+    <li><b>Google Play Services for AR.</b> Install or update it, then come back here. If the Play Store says your phone isn’t compatible, this phone can’t do camera tracking (step walks still work).<br><a class="btn small" href="https://play.google.com/store/apps/details?id=com.google.ar.core" target="_blank" rel="noopener">Open in Play Store</a></li>
+    <li id="camStepPerm"><b>Chrome’s permissions for this site.</b> Tap the icon left of the web address › Permissions, and allow Camera (and Augmented reality, if it’s listed). If you closed or blocked Chrome’s question before, Chrome doesn’t ask again until you change it there.</li>
+    <li><b>Close other apps that use the camera,</b> then tap Try again. When Chrome asks to use the camera and map your surroundings, tap Allow.</li>
+  </ol>
+  <div class="inline" style="margin-top:12px"><button id="camRetry" class="btn primary small">Try again</button><a class="btn small" href="https://immersive-web.github.io/webxr-samples/immersive-ar-session.html" target="_blank" rel="noopener">Test on Google’s AR sample</a></div>
+  <p class="hint" style="margin-top:10px">Google’s sample is a plain AR page (tap Enter AR). If it doesn’t start either, it’s the phone or Chrome, not Pathtrace.</p>
+  <div class="field" style="margin-top:14px">
+    <label>Details, to send me if it still fails</label>
+    <pre id="camDiag" class="diag">…</pre>
+    <div class="inline"><button id="camDiagCopy" class="btn small">Copy details</button></div>
+  </div>
+</section>
+
 <div id="sheetBg" class="sheet-bg" hidden></div>
 <section id="sheet" class="sheet" hidden aria-label="Settings">
   <div class="sheet-head"><h2>Settings</h2><button id="sheetClose" class="btn small">Done</button></div>
@@ -294,6 +319,7 @@ label.file input{position:absolute;inset:0;opacity:0}
   <div class="field" id="camField">
     <label>Camera mapping</label>
     <p class="hint" id="camHint"></p>
+    <div class="inline"><button id="camCheck" class="btn small">Check this phone</button></div>
   </div>
 
   <div class="field" id="magField">
@@ -2229,20 +2255,18 @@ async function startCam(){
   if (S.mode !== 'map'){ toast('Camera walks make the map: open the Map tab'); return; }
   if (hasWalk(S)){ toast('This walk already has something on it. Tap + Walk for a camera walk.'); return; }
   const root = $('xr');
-  xrPlaces(false); $('xrHint').hidden = false; $('xrSay').hidden = true;
+  root.hidden = false; xrPlaces(false); $('xrHint').hidden = false; $('xrSay').hidden = true;
   $('xrStatus').textContent = 'Starting the camera…'; $('xrStatus').className = 'xr-chip finding';
   let session;
   try {
     session = await navigator.xr.requestSession('immersive-ar', { requiredFeatures: ['local', 'dom-overlay'], domOverlay: { root } });   // (no panel, no Done button: then don't start)
   } catch(e){
-    // Chrome says NotSupportedError for everything after asking: no ARCore, AR services declined, or the camera refused
-    banner(e && e.name === 'NotSupportedError' && S.ar ? 'Camera tracking didn’t start. Allow it when Chrome asks, and install Google Play Services for AR if it offers. If you said no before, allow AR for this site in Chrome’s Site settings.'
-      : e && e.name === 'NotSupportedError' ? 'This phone can’t do camera tracking in Chrome. It needs an ARCore phone with Google Play Services for AR (Play Store).'
-      : e && (e.name === 'NotAllowedError' || e.name === 'SecurityError') ? 'Camera tracking needs the camera. Tap Map with the camera again and allow it when Chrome asks.'
-      : 'Couldn’t start camera tracking (' + ((e && e.message) || e) + ').');
+    // Chrome says NotSupportedError for everything that goes wrong after the tap (the real reason only goes to its
+    // console): no ARCore, Google Play Services for AR missing or declined, the camera question closed or refused
+    root.hidden = true;
+    camHelp(e);
     return;
   }
-  root.hidden = false;
   try {
     const gl = document.createElement('canvas').getContext('webgl', { xrCompatible: true });
     session.updateRenderState({ baseLayer: new XRWebGLLayer(session, gl, { antialias: false, depth: false }) });
@@ -2257,10 +2281,49 @@ async function startCam(){
   } catch(e){
     try { session.end().catch(() => {}); } catch(_){}
     root.hidden = true; CAM = null;
-    banner('Couldn’t start camera tracking (' + ((e && e.message) || e) + ').');
+    camHelp(e);
   }
 }
 $('camBtn').onclick = startCam;
+
+// When camera tracking won't start (or to check the phone first): what to try, and the details to send
+const openCamHelp = on => { $('camHelp').hidden = !on; $('camHelpBg').hidden = !on; };
+async function camHelp(err){
+  const lines = [], ua = navigator.userAgent;
+  let cam = 'unknown';
+  try { cam = (await navigator.permissions.query({ name: 'camera' })).state; } catch(e){}
+  let ar = S.ar;
+  try { if (navigator.xr && navigator.xr.isSessionSupported) ar = await navigator.xr.isSessionSupported('immersive-ar'); else ar = 'no WebXR'; } catch(e){ ar = 'error: ' + e.message; }
+  lines.push(err ? 'Error: ' + (err.name || 'Error') + ': ' + (err.message || err) : 'Error: none (checked from Settings)');
+  lines.push('Chrome says AR is supported: ' + ar);
+  lines.push('Camera permission for this site: ' + cam);
+  try {
+    if (navigator.userAgentData && navigator.userAgentData.getHighEntropyValues){
+      const h = await navigator.userAgentData.getHighEntropyValues(['model', 'platformVersion', 'fullVersionList']);
+      lines.push('Phone: ' + (h.model || '?') + ', Android ' + (h.platformVersion || '?'));
+      lines.push('Browser: ' + (h.fullVersionList || []).map(b => b.brand + ' ' + b.version).filter(x => !/not.?a.?brand/i.test(x)).join(', '));
+    }
+  } catch(e){}
+  lines.push('User agent: ' + ua);
+  if (document.referrer) lines.push('Opened from: ' + document.referrer);
+  lines.push('Page: ' + location.origin + location.pathname);
+  $('camDiag').textContent = lines.join('\n');
+  const inApp = /^android-app:/.test(document.referrer) || /; wv\)/.test(ua) || !/Chrome\//.test(ua) || /SamsungBrowser|Firefox|EdgA|OPR\//.test(ua);
+  $('camHelpH').textContent = err ? 'Camera tracking didn’t start' : 'Camera tracking on this phone';
+  $('camHelpWhy').textContent = ar === false || ar === 'no WebXR'
+    ? 'Chrome says this phone or browser can’t do AR. If you’re in Chrome already, the Play Store check below tells you whether the phone can.'
+    : cam === 'denied' ? 'The camera is blocked for this site in Chrome. Step 3 fixes that.'
+    : err ? 'Chrome doesn’t tell the page why. Usually it’s one of these, in this order:'
+    : 'If Map with the camera doesn’t start, check these, in this order:';
+  $('camStepChrome').classList.toggle('now', inApp);
+  $('camStepPerm').classList.toggle('now', cam === 'denied');
+  openCamHelp(true);
+}
+$('camHelpClose').onclick = () => openCamHelp(false);
+$('camHelpBg').onclick = () => openCamHelp(false);
+$('camRetry').onclick = () => { openCamHelp(false); startCam(); };
+$('camCheck').onclick = () => { openSheet(false); camHelp(null); };
+$('camDiagCopy').onclick = async () => { try { await navigator.clipboard.writeText($('camDiag').textContent); toast('Copied. Paste it into your message to me.'); } catch(e){ toast('Press and hold the details to select and copy them.'); } };
 
 // Each camera frame: where the phone is (metres from S along the floor, +y the way it faced at S)
 function camFrame(time, frame){
