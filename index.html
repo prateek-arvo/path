@@ -90,6 +90,18 @@ main{flex:1;position:relative;min-height:0;overflow:hidden}
 .home-btn svg{width:18px;height:18px;stroke:var(--straight)}
 .home-btn:active{transform:scale(.97)}
 .home-btn.mark{bottom:60px}
+.home-btn.go{bottom:108px}
+.home-btn.go svg{stroke:var(--raw)}
+.nav-chip{position:absolute;top:86px;left:max(16px,env(safe-area-inset-left,0px));right:max(16px,env(safe-area-inset-right,0px));display:flex;align-items:center;gap:10px;
+  background:var(--raw);color:#1d1503;border-radius:12px;padding:9px 10px 9px 14px;font:600 15px var(--sans);z-index:2}
+.nav-chip.done{background:var(--straight)}
+.nav-chip span{flex:1;min-width:0}
+.nav-chip small{display:block;font-weight:500;font-size:12.5px;opacity:.8}
+.nav-chip button{background:none;border:0;font-size:22px;line-height:1;padding:0 4px;color:inherit}
+.navon #tilt,.navon #offMap{top:142px}
+.xr-nav{font:700 17px var(--sans);background:var(--raw);color:#1d1503;border-radius:12px;padding:10px 14px}
+.xr-nav.done{background:var(--straight)}
+.xr-nav small{display:block;font-weight:500;font-size:13px;opacity:.8}
 .home-btn.mark svg{stroke:var(--raw)}
 .places{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:12px 0}
 .places button{min-height:48px;border-radius:12px;border:1px solid var(--line);background:var(--panel-2);color:var(--text);font-weight:600;font-size:15px;padding:8px 10px;text-align:left;overflow-wrap:anywhere}
@@ -206,6 +218,11 @@ label.file input{position:absolute;inset:0;opacity:0}
   </div>
   <div id="banner" class="banner" hidden><span id="bannerText"></span><button id="bannerClose" aria-label="Dismiss">×</button></div>
   <div id="toast" class="toast" hidden></div>
+  <div id="navChip" class="nav-chip" hidden><span id="navText"></span><button id="navStop" aria-label="Stop the route">×</button></div>
+  <button id="btnGo" class="home-btn go" hidden>
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21V4"/><path d="M5 4h11l-2 4 2 4H5"/></svg>
+    Go to
+  </button>
   <button id="btnMark" class="home-btn mark" hidden>
     <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-6-5.6-6-11a6 6 0 0 1 12 0c0 5.4-6 11-6 11z"/><circle cx="12" cy="10" r="2.2"/></svg>
     Mark place
@@ -234,15 +251,16 @@ label.file input{position:absolute;inset:0;opacity:0}
 <div id="xr" class="xr" hidden>
   <div class="xr-top"><div id="xrStatus" class="xr-chip finding">Starting the camera…</div><div class="xr-stats"><span id="xrDist">0.0</span> m · <span id="xrTime">00:00</span></div></div>
   <div id="xrPlaces" class="xr-places" hidden>
-    <h2>Where are you?</h2>
+    <h2 id="xrPlTitle">Where are you?</h2>
     <div id="xrPlList" class="xr-pl-list"></div>
     <div class="inline"><input id="xrPlNew" type="text" placeholder="New place, e.g. Kitchen door" maxlength="40" autocomplete="off" enterkeyhint="done"><button id="xrPlAdd" class="btn small">Add</button></div>
     <div class="row2"><button id="xrPlUndo" class="btn small">Undo last mark</button><button id="xrPlCancel" class="btn small">Cancel</button></div>
   </div>
   <canvas id="xrMap"></canvas>
+  <div id="xrNav" class="xr-nav" hidden></div>
   <p id="xrHint" class="xr-hint">Hold the phone up, camera facing where you walk. Walk at your normal pace and turn slowly, keeping the camera on the room rather than a blank wall. Tap Mark place in each doorway.</p>
   <div id="xrSay" class="xr-say" hidden></div>
-  <div id="xrBottom" class="xr-bottom"><button id="xrMark" class="btn">Mark place</button><button id="xrDone" class="btn primary">Done</button></div>
+  <div id="xrBottom" class="xr-bottom"><button id="xrMark" class="btn">Mark place</button><button id="xrGo" class="btn" hidden>Go to</button><button id="xrDone" class="btn primary">Done</button></div>
 </div>
 
 <div id="camHelpBg" class="sheet-bg" hidden></div>
@@ -341,6 +359,7 @@ label.file input{position:absolute;inset:0;opacity:0}
     <label>For a good trace</label>
     <ul>
       <li>Camera walks (Android): wait at S until it says Tracking, then walk with the phone held up so the camera sees the room, not a blank wall or the floor. Turn slowly. Good light helps.</li>
+      <li>Go to (Live): pick a place and follow the yellow route. The prompts say when to turn and how far is left.</li>
       <li>Step walks: hold the phone flat in front of you, screen up, like reading a map.</li>
       <li>Start at a spot you can find again, like the door, facing along a wall.</li>
       <li>Walk at a normal, steady pace. Shuffling and very slow steps get missed.</li>
@@ -1302,20 +1321,26 @@ function camMarks(w){
   return out;
 }
 // The turn (any angle: a camera walk faces wherever the camera pointed at S) that lays a path over other lines best.
-// Every 3 degrees, then to a quarter of a degree around the best. The compass (prior) only decides between turns
-// that fit about as well, as for step walks.
-function alignTurn(pts, lines, prior){
+// Every 3 degrees, then to a quarter of a degree around the best. The compass (prior) only picks between turns that fit
+// about as well (two corridors from S, say): the turn itself always comes from the shape, since the compass indoors
+// can be 20 or 30 degrees out.
+function alignTurn(pts, lines, prior, minSamples){
   const samp = resampled(pts.filter(Boolean), 0.5);
-  if (samp.length < 8) return prior || 0;
+  if (samp.length < (minSamples || 8)) return prior != null ? wrap(prior) : 0;
   const segs = []; for (const ln of lines) for (let k = 1; k < ln.length; k++) if (ln[k - 1] && ln[k]) segs.push([ln[k - 1], ln[k]]);
-  if (!segs.length) return prior || 0;
+  if (!segs.length) return prior != null ? wrap(prior) : 0;
   const d1 = p => { let b = 4; for (const [a, c] of segs){ const vx = c[0] - a[0], vy = c[1] - a[1], l2 = vx * vx + vy * vy, t = l2 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * vx + (p[1] - a[1]) * vy) / l2)) : 0, dx = p[0] - a[0] - vx * t, dy = p[1] - a[1] - vy * t, d = dx * dx + dy * dy; if (d < b) b = d; } return Math.sqrt(b); };
   const score = r => samp.reduce((e, p) => e + d1(turn(p, r)), 0) / samp.length;
-  let best = 0, bs = Infinity;
-  for (let a = -180; a < 180; a += 3){ const v = score(a * DEG); if (v < bs){ bs = v; best = a * DEG; } }
-  for (let a = -3; a <= 3; a += 0.25){ const r = best + a * DEG, v = score(r); if (v < bs){ bs = v; best = r; } }
-  if (prior != null){ const v = score(prior); if (!(v > 1.25 * bs + 0.1)) return wrap(prior); }
-  return wrap(best);
+  const grid = []; for (let a = -180; a < 180; a += 3) grid.push([a * DEG, score(a * DEG)]);
+  const G = grid.length, mins = grid.filter((g, k) => g[1] <= grid[(k + G - 1) % G][1] && g[1] <= grid[(k + 1) % G][1]);
+  let pick = mins.reduce((b, m) => m[1] < b[1] ? m : b);
+  if (prior != null){
+    const near = mins.filter(m => Math.abs(wrap(m[0] - prior)) < 35 * DEG).sort((a, b) => a[1] - b[1])[0];
+    if (near && !(near[1] > 1.25 * pick[1] + 0.1)) pick = near;
+  }
+  let r = pick[0], bs = pick[1];
+  for (let a = -3; a <= 3; a += 0.25){ const v = score(pick[0] + a * DEG); if (v < bs){ bs = v; r = pick[0] + a * DEG; } }
+  return wrap(r);
 }
 // The map from camera walks: the first camera walk's path, plus the stretches the others add (lined up on it), with
 // the places where the camera walks marked them. Step walks don't change it: each is turned onto it by its shape
@@ -1395,6 +1420,153 @@ function camPaths(w){
   return { hs: [], lens, raw: line, straight: straight.length ? straight : [[0, 0]], drawn: line.length ? line : [[0, 0]], events: { uturns: 0, joins: 0 }, axis: camAxis([line]), places: {}, amp: 0, cam: true };
 }
 
+/* ---- walking on the map with the camera ---- */
+/* A live camera walk is as accurate as the map, but in its own frame: 0,0 where tracking started, +y the way the
+   camera faced. It sits on the map by a turn and a shift. Where you started: S, or a place you marked straight away.
+   Each place you mark on the way pins it further: with two (start included) the turn comes from them. Before that,
+   from the walk's shape once there's 4 m of it (the compass only breaks ties), and before that the compass, or
+   facing the way the map's first walk did. A last nudge lays the walk onto the lines (a start a little off S). */
+function camAlign(map, w){
+  const cam = w.cam || [], own = cam.filter(Boolean);
+  if (!own.length) return null;
+  const at0 = own[0], first = cam.indexOf(at0);
+  const prior = w.refC != null && map.refC != null ? wrap(w.refC - map.refC) : null;
+  // where you started, and the places you marked since
+  const pairs = [];
+  let P0 = [0, 0], startName = 'S';
+  const marks = (w.places || []).filter(m => m && m.name && m.ci >= 0 && map.places && map.places[m.name]);
+  const camAt = ci => { let k = Math.min(ci, cam.length - 1); while (k > 0 && !cam[k]) k--; return cam[k] ? [cam[k][1] - at0[1], cam[k][2] - at0[2]] : null; };
+  let startMark = null;                                          // a place marked before you'd moved: where you started
+  for (const m of marks){ const p = camAt(m.ci); if (p && Math.hypot(p[0], p[1]) < 0.6){ startMark = m; break; } }
+  if (startMark){ P0 = map.places[startMark.name].slice(); startName = startMark.name; }
+  pairs.push([[0, 0], P0]);
+  for (const m of marks){ if (m === startMark) continue; const p = camAt(m.ci); if (p) pairs.push([p, map.places[m.name]]); }
+  const rel = own.map(e => [e[1] - at0[1], e[2] - at0[2]]);
+  const lines = map.lines || [];
+  // the turn the marks say (least squares, no scaling: the camera measures true metres), if they're far enough apart
+  let fromMarks = null;
+  const spread = pairs.length >= 2 ? Math.max(...pairs.map(pr => Math.hypot(pr[0][0], pr[0][1]))) : 0;
+  if (pairs.length >= 2 && spread >= 1.5){
+    let ax = 0, ay = 0, bx = 0, by2 = 0; for (const [a, b] of pairs){ ax += a[0]; ay += a[1]; bx += b[0]; by2 += b[1]; }
+    ax /= pairs.length; ay /= pairs.length; bx /= pairs.length; by2 /= pairs.length;
+    let sn = 0, cs = 0;
+    for (const [a, b] of pairs){ const u = [a[0] - ax, a[1] - ay], v = [b[0] - bx, b[1] - by2]; cs += u[0] * v[0] + u[1] * v[1]; sn += u[1] * v[0] - u[0] * v[1]; }
+    fromMarks = Math.atan2(sn, cs);                              // turn(p, rot) takes the walk's frame to the map's
+  }
+  let rot, off = P0.slice(), by;
+  if (camLength(cam) >= 2 && lines.length){                     // the shape decides; the marks (or else the compass) pick between fits
+    const shifted = lines.map(ln => ln.map(p => p && [p[0] - P0[0], p[1] - P0[1]]));
+    rot = alignTurn(rel, shifted, fromMarks != null ? fromMarks : prior, 5); by = 'shape';
+  } else if (fromMarks != null){ rot = wrap(fromMarks); by = 'marks'; }
+  else { rot = prior != null ? wrap(prior) : 0; by = prior != null ? 'compass' : 'start'; }
+  // the nudge: the mean way the walk's points sit off the nearest lines (within a metre), twice
+  const segs = []; for (const ln of lines) for (let k = 1; k < ln.length; k++) if (ln[k - 1] && ln[k]) segs.push([ln[k - 1], ln[k]]);
+  const nearestOn = p => { let best = null, bd = Infinity; for (const [a, c] of segs){ const vx = c[0] - a[0], vy = c[1] - a[1], l2 = vx * vx + vy * vy, t = l2 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * vx + (p[1] - a[1]) * vy) / l2)) : 0, q = [a[0] + vx * t, a[1] + vy * t], d = Math.hypot(p[0] - q[0], p[1] - q[1]); if (d < bd){ bd = d; best = q; } } return best ? { q: best, d: bd } : null; };
+  if (segs.length && by !== 'start' && by !== 'compass'){
+    const samp = resampled(rel, 0.4);
+    for (let it = 0; it < 2; it++){
+      let sx = 0, sy = 0, n = 0;
+      for (const p of samp){ const m = turn(p, rot), q = nearestOn([m[0] + off[0], m[1] + off[1]]); if (q && q.d < 1){ sx += q.q[0] - m[0] - off[0]; sy += q.q[1] - m[1] - off[1]; n++; } }
+      if (n >= 5){ const dx = sx / n, dy = sy / n, l = Math.hypot(dx, dy), k = l > 0.5 ? 0.5 / l : 1; off = [off[0] + dx * k, off[1] + dy * k]; }
+    }
+  }
+  // (until something says which way the walk faces, the dot waits where you started)
+  const put = by === 'start' ? (e => e && P0.slice()) : (e => { if (!e) return null; const m = turn([e[1] - at0[1], e[2] - at0[2]], rot); return [m[0] + off[0], m[1] + off[1]]; });
+  const drawn = cam.slice(first).map(put);
+  while (drawn.length && !drawn[drawn.length - 1]) drawn.pop();
+  const last = drawn[drawn.length - 1], q = segs.length ? nearestOn(last) : null;
+  return { rot, off, by, start: startName, at0: [at0[1], at0[2]], P0, drawn, straight: drawn.filter(Boolean), dot: q && q.d <= 1.2 ? q.q : last, onMap: !!(q && q.d <= 1.2), raw: last };
+}
+// A point onto the nearest of the map's lines, if one is within R metres
+function snapOnMap(map, p, R){
+  if (!map._segs){ const sg = []; for (const ln of map.lines || []) for (let k = 1; k < ln.length; k++) if (ln[k - 1] && ln[k]) sg.push([ln[k - 1], ln[k]]); Object.defineProperty(map, '_segs', { value: sg, enumerable: false, configurable: true }); }
+  let best = null, bd = R == null ? Infinity : R;
+  for (const [a, c] of map._segs){ const vx = c[0] - a[0], vy = c[1] - a[1], l2 = vx * vx + vy * vy, t = l2 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * vx + (p[1] - a[1]) * vy) / l2)) : 0, q = [a[0] + vx * t, a[1] + vy * t], d = Math.hypot(p[0] - q[0], p[1] - q[1]); if (d <= bd){ bd = d; best = q; } }
+  return best;
+}
+
+/* ---- routes ---- */
+/* The map's lines as a network: their ends, the places where they meet or cross (and where one ends within 60 cm of
+   another: that's how the pieces from later walks join on), and the stretches between. A route is the shortest way
+   along it, from where you are to a place. */
+function navGraph(map){
+  if (map._nav) return map._nav;
+  const segs = []; for (const ln of map.lines || []) for (let k = 1; k < ln.length; k++) if (ln[k - 1] && ln[k] && Math.hypot(ln[k][0] - ln[k - 1][0], ln[k][1] - ln[k - 1][1]) > 1e-6) segs.push([ln[k - 1], ln[k]]);
+  const cuts = segs.map(() => [0, 1]), links = [];
+  const proj = (p, s) => { const [a, c] = s, vx = c[0] - a[0], vy = c[1] - a[1], l2 = vx * vx + vy * vy, t = Math.max(0, Math.min(1, ((p[0] - a[0]) * vx + (p[1] - a[1]) * vy) / l2)); return { t, q: [a[0] + vx * t, a[1] + vy * t] }; };
+  for (let i = 0; i < segs.length; i++) for (let j = i + 1; j < segs.length; j++){
+    const [a, b] = segs[i], [c, d] = segs[j];
+    const r = [b[0] - a[0], b[1] - a[1]], s = [d[0] - c[0], d[1] - c[1]], den = r[0] * s[1] - r[1] * s[0];
+    if (Math.abs(den) > 1e-9){                                   // crossing
+      const t = ((c[0] - a[0]) * s[1] - (c[1] - a[1]) * s[0]) / den, u = ((c[0] - a[0]) * r[1] - (c[1] - a[1]) * r[0]) / den;
+      if (t > 1e-6 && t < 1 - 1e-6 && u > 1e-6 && u < 1 - 1e-6){ cuts[i].push(t); cuts[j].push(u); }
+    }
+  }
+  // an end of one line near the middle of another: joined there
+  const ends = []; for (const ln of map.lines || []){ const pc = ln.filter(Boolean); if (pc.length >= 2){ ends.push(pc[0], pc[pc.length - 1]); } }
+  for (const e of ends) for (let i = 0; i < segs.length; i++){
+    const pr = proj(e, segs[i]), d = Math.hypot(e[0] - pr.q[0], e[1] - pr.q[1]);
+    if (d < 0.6 && d > 1e-6){ cuts[i].push(pr.t); links.push([e, pr.q]); }
+  }
+  const nodes = [], key = new Map(), adj = [];
+  const node = p => { const k = Math.round(p[0] / 0.2) + ',' + Math.round(p[1] / 0.2); if (key.has(k)) return key.get(k); const id = nodes.length; nodes.push(p.slice()); adj.push([]); key.set(k, id); return id; };
+  const edge = (p, q) => { const a = node(p), b = node(q); if (a === b) return; const l = Math.hypot(nodes[a][0] - nodes[b][0], nodes[a][1] - nodes[b][1]); adj[a].push([b, l]); adj[b].push([a, l]); };
+  segs.forEach((sg, i) => { const ts = [...new Set(cuts[i].map(t => +t.toFixed(6)))].sort((x, y) => x - y); for (let k = 1; k < ts.length; k++){ const p = [sg[0][0] + (sg[1][0] - sg[0][0]) * ts[k - 1], sg[0][1] + (sg[1][1] - sg[0][1]) * ts[k - 1]], q = [sg[0][0] + (sg[1][0] - sg[0][0]) * ts[k], sg[0][1] + (sg[1][1] - sg[0][1]) * ts[k]]; edge(p, q); } });
+  for (const [p, q] of links) edge(p, q);
+  const g = { nodes, adj, segs };
+  Object.defineProperty(map, '_nav', { value: g, enumerable: false, configurable: true });
+  return g;
+}
+// The shortest way along the map from point `from` to point `to` (each joined onto its nearest stretch)
+function route(map, from, to){
+  const g = navGraph(map); if (!g.nodes.length) return null;
+  const { nodes, adj } = g;
+  // the nearest stretch between two nodes, for joining a point on
+  const attach = p => {
+    let best = null;
+    for (let a = 0; a < adj.length; a++) for (const [b] of adj[a]){ if (b < a) continue;
+      const A = nodes[a], B = nodes[b], vx = B[0] - A[0], vy = B[1] - A[1], l2 = vx * vx + vy * vy, t = l2 ? Math.max(0, Math.min(1, ((p[0] - A[0]) * vx + (p[1] - A[1]) * vy) / l2)) : 0, q = [A[0] + vx * t, A[1] + vy * t], d = Math.hypot(p[0] - q[0], p[1] - q[1]);
+      if (!best || d < best.d) best = { a, b, q, d, t };
+    }
+    return best;
+  };
+  const s = attach(from), e = attach(to); if (!s || !e) return null;
+  const N = nodes.length, S0 = N, E0 = N + 1, dist = new Float64Array(N + 2).fill(Infinity), prev = new Int32Array(N + 2).fill(-1), done = new Uint8Array(N + 2);
+  const ext = (i) => { const out = i < N ? adj[i].slice() : [];
+    if (i === S0){ out.push([s.a, Math.hypot(s.q[0] - nodes[s.a][0], s.q[1] - nodes[s.a][1])], [s.b, Math.hypot(s.q[0] - nodes[s.b][0], s.q[1] - nodes[s.b][1])]); if ((s.a === e.a && s.b === e.b) || (s.a === e.b && s.b === e.a)) out.push([E0, Math.hypot(s.q[0] - e.q[0], s.q[1] - e.q[1])]); }
+    if (i === e.a) out.push([E0, Math.hypot(e.q[0] - nodes[e.a][0], e.q[1] - nodes[e.a][1])]);
+    if (i === e.b) out.push([E0, Math.hypot(e.q[0] - nodes[e.b][0], e.q[1] - nodes[e.b][1])]);
+    return out; };
+  dist[S0] = 0;
+  for (;;){
+    let u = -1, du = Infinity; for (let i = 0; i < N + 2; i++) if (!done[i] && dist[i] < du){ du = dist[i]; u = i; }
+    if (u < 0 || u === E0) break;
+    done[u] = 1;
+    for (const [v, l] of ext(u)) if (du + l < dist[v]){ dist[v] = du + l; prev[v] = u; }
+  }
+  if (!isFinite(dist[E0])) return null;
+  const path = []; for (let v = E0; v >= 0; v = prev[v]) path.push(v === E0 ? e.q : v === S0 ? s.q : nodes[v]);
+  path.reverse();
+  return { path, length: dist[E0] + e.d, from: s.q, to: e.q, off: s.d };
+}
+// What to do next on a route: turns of more than 35 degrees (left, right, round), how far to the next one, and
+// whether you're there
+function routeSteps(rt, name){
+  if (!rt) return null;
+  const pts = simplify(rt.path, 0.25), turns = [];
+  let along = 0;
+  for (let k = 1; k < pts.length - 1; k++){
+    along += Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]);
+    const h1 = Math.atan2(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]), h2 = Math.atan2(pts[k + 1][0] - pts[k][0], pts[k + 1][1] - pts[k][1]), d = wrap(h2 - h1);
+    if (Math.abs(d) > 35 * DEG) turns.push({ at: along, dir: Math.abs(d) > 150 * DEG ? 'round' : d > 0 ? 'right' : 'left', p: pts[k] });
+  }
+  const left = rt.length, next = turns[0];
+  const say = left < 0.8 ? 'You’re at ' + name
+    : next ? (next.dir === 'round' ? 'Turn round' : 'Turn ' + next.dir) + (next.at < 0.8 ? ' now' : ' in ' + next.at.toFixed(1) + ' m')
+    : name + ' ahead, ' + left.toFixed(1) + ' m';
+  return { say, left, turns, arrived: left < 0.8, pts };
+}
+
 /* ---- walking on a saved map, on rails ---- */
 /* The map's lines are the only places you can be. Many guesses of where you are, each with its own idea of how long
    your steps really are, are walked along the lines with your steps; any step may have been missed or counted twice.
@@ -1422,6 +1594,7 @@ function railIndex(map){                                       // the map as seg
   return map._rail;
 }
 function railTrack(map, w, cfg, cache){
+  const RPq = Object.assign({ miss: 0.08, dbl: 0.02, timing: true, missPlain: 0.05, keep: 0.6, after: 1, limK: 2, limB: 0.4 }, cfg.rail || {});
   const lens = stepLengths(w, Object.assign({}, cfg, map.amp > 0 ? { ampRef: map.amp } : {}));
   const hs0 = relHeadings(w, cfg.source), n = hs0.length;
   let q = 0;
@@ -1434,6 +1607,27 @@ function railTrack(map, w, cfg, cache){
   const Lz = lens.map((l, k) => pivot.has(k) ? 0 : l);
   const { SG, grid, key } = railIndex(map);
   const raw = buildPath(hs, lens), events = { uturns: startAt.size, joins: 0 };
+  /* What each step probably was, from its timing against your recent rhythm (the middle of your last ten step gaps).
+     About twice the usual gap with nothing counted between: likely a step that was missed (slow steps, or the phone
+     catching only one foot). Much shorter than usual: likely one step counted twice. After a pause: a first step off,
+     usually short. Turning round on the spot (more than 110 degrees in one step): hardly any distance. Otherwise a
+     plain step, which only rarely hides a missed one. (Before: every step had the same 8% chance of being two.) */
+  const gaps = w.steps.map((st, k) => k ? st.t - w.steps[k - 1].t : st.t);
+  const TM = Object.assign({ turn: 110, fTurn: 0.4, spTurn: 0.2, short: 0.55, dblShort: 0.5, long: 1.45, missLong: 0.45, missLongTurn: 0.35, fLongTurn: 0.9, spLongTurn: 0.15, pause: 2.6, missPause: 0.05, fPause: 0.85, spPause: 0.25, corner: true, missCorner: 0.3, fCorner: 1.1, spCorner: 0.6 }, RPq.tm || {});
+  const STEPM = w.steps.map((st, k) => {
+    const rec = []; for (let i = k - 1; i >= 1 && rec.length < 10; i--) if (gaps[i] >= 250 && gaps[i] <= 1100) rec.push(gaps[i]);
+    const T0 = rec.length >= 3 ? median(rec) : 620, r = gaps[k] / T0;
+    const dh = k ? Math.abs(wrap(hs[k] - hs[k - 1])) : 0;
+    if (!RPq.timing) return { miss: RPq.miss, dbl: RPq.dbl, f: 1, spread: 0 };
+    if (dh > TM.turn * DEG) return { miss: 0.01, dbl: 0.01, f: TM.fTurn, spread: TM.spTurn };
+    // a long gap while turning a corner: on your phone's walks that's where steps go uncounted (you slow down and
+    // round the corner with soft steps), anywhere from none to a few, so this step could be short or two or three long
+    if (TM.corner && dh > 50 * DEG && r >= TM.long) return { miss: TM.missCorner, dbl: 0.01, f: TM.fCorner, spread: TM.spCorner };
+    if (r < TM.short) return { miss: 0.01, dbl: TM.dblShort, f: 1, spread: 0 };
+    if (r >= TM.pause) return { miss: TM.missPause, dbl: 0.01, f: TM.fPause, spread: TM.spPause };
+    if (r >= TM.long) return dh > 50 * DEG ? { miss: TM.missLongTurn, dbl: 0.01, f: TM.fLongTurn, spread: TM.spLongTurn } : { miss: TM.missLong, dbl: 0.01, f: 1, spread: 0 };
+    return { miss: RPq.missPlain, dbl: 0.015, f: 1, spread: 0 };
+  });
   if (!SG.length || !n) return { hs, lens, raw, straight: [[0, 0]].concat(raw.slice(1)), drawn: raw, events, rot, onMap: [] };
   const RP = Object.assign({ miss: 0.08, dbl: 0.02, sig: 0.35, head: 5, R: 0.9, wait: 0.1, waitSig: 0.7, scale: 0.07, n: 300, end: 0.5, quarters: true }, cfg.rail || {});
   // Which way you started facing against the map: the compass says (rot), but it can be a quarter turn out near a
@@ -1497,8 +1691,9 @@ function railTrack(map, w, cfg, cache){
       for (let j = 0; j < N; j++){
         DT[j] += gauss() * 0.2 * DEG;
         const u = rnd();
-        let l = L * SC[j] * (1 + gauss() * 0.06);
-        if (u < RP.miss) l *= 2; else if (u < RP.miss + RP.dbl) continue;   // a step missed / one counted twice
+        const sm = STEPM[k];
+        let l = L * SC[j] * (1 + gauss() * 0.06) * (sm.f + (sm.spread ? (rnd() * 2 - 1) * sm.spread : 0));
+        if (u < sm.miss) l *= 2; else if (u < sm.miss + sm.dbl) continue;   // a step missed / one counted twice
         const th = H[k] + DT[j] + gauss() * RP.head * DEG, mx = Math.sin(th), my = Math.cos(th);
         const px = X[j] + mx * l, py = Y[j] + my * l;
         let r = nearest(px, py, mx, my, RP.R, COS);
@@ -1528,7 +1723,47 @@ function railTrack(map, w, cfg, cache){
     if (markAt.has(k + 1)) place(markAt.get(k + 1), true);       // you said where you are
     ST[k] = { X: Float64Array.from(X), Y: Float64Array.from(Y), SC: Float64Array.from(SC), DT: Float64Array.from(DT), W: Float64Array.from(W), SG: Int32Array.from(SEGI), A: anc, OFF: off };
   }
-  if (cache){ cache.sig = sig; cache.map = map; cache.ST = ST; cache.H = H.slice(); cache.L = Lz.slice(); cache.M = Array.from({ length: n }, (_, k) => String(markAt.get(k + 1) || '')); }
+  /* The dot you see. The guesses can split (two doorways a metre apart; a step missed or not), and which group is
+     densest can change from one step to the next: shown as it is, the dot jumps, and the trail behind you is redrawn.
+     So the dot keeps to the group it's on unless another holds clearly more of the weight (over twice) for two steps
+     running, and it moves at most about a step and a half per step, along the map, never across a wall: if it has
+     to catch up, it walks there. Your trail is where the dot has been, so it doesn't change behind you. Where you
+     said where you are, it goes straight there. */
+  const steady = RPq.steady !== false;
+  // (what was shown stays shown: when a later step changes the guesses about earlier ones, only the dot from here on
+  // follows the new guesses, from where it was)
+  const keepShown = cache && cache.Dh && cache.sig === sig && cache.map === map && cache.Dh.length <= n && (cache.Dn || 0) <= n;
+  let Dh = keepShown ? cache.Dh.slice() : [], Sw = keepShown ? cache.Sw.slice() : [];
+  if (keepShown && cache.M){                                     // (a place marked since: the dot goes there now)
+    for (let k = 0; k < Dh.length; k++) if ((cache.M[k] || '') !== String(markAt.get(k + 1) || '')){ Dh = Dh.slice(0, k); Sw = Sw.slice(0, k); break; }
+  }
+  if (steady){
+    const groupAt = (st, c, R) => { let w = 0, x = 0, y = 0; for (let j = 0; j < N; j++){ const dx = st.X[j] - c[0], dy = st.Y[j] - c[1]; if (dx * dx + dy * dy <= R * R){ w += st.W[j]; x += st.W[j] * st.X[j]; y += st.W[j] * st.Y[j]; } } return w > 0 ? { w, c: [x / w, y / w] } : { w: 0, c: null }; };
+    const densest = st => {                                      // the 0.7 m cell (with its neighbours) holding the most weight
+      const cells = new Map();
+      for (let j = 0; j < N; j++){ const kk = Math.floor(st.X[j] / 0.7) + ',' + Math.floor(st.Y[j] / 0.7); cells.set(kk, (cells.get(kk) || 0) + st.W[j]); }
+      let bk = null, bw = -1;
+      for (const [kk, cw] of cells){ const [cx, cy] = kk.split(',').map(Number); let w = 0; for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) w += cells.get((cx + a) + ',' + (cy + b)) || 0; if (w > bw){ bw = w; bk = [cx, cy]; } }
+      let w = 0, x = 0, y = 0;
+      for (let j = 0; j < N; j++){ const cx = Math.floor(st.X[j] / 0.7), cy = Math.floor(st.Y[j] / 0.7); if (Math.abs(cx - bk[0]) <= 1 && Math.abs(cy - bk[1]) <= 1){ w += st.W[j]; x += st.W[j] * st.X[j]; y += st.W[j] * st.Y[j]; } }
+      return { w, c: [x / w, y / w] };
+    };
+    const along = (path, d) => { for (let i = 1; i < path.length; i++){ const a = path[i - 1], b = path[i], l = Math.hypot(b[0] - a[0], b[1] - a[1]); if (d <= l) return l ? [a[0] + (b[0] - a[0]) * d / l, a[1] + (b[1] - a[1]) * d / l] : a.slice(); d -= l; } return path[path.length - 1].slice(); };
+    for (let k = Dh.length; k < n; k++){
+      const st = ST[k], prev = k ? Dh[k - 1] : start;
+      if (markAt.has(k + 1)){ const at = markAt.get(k + 1), r0 = nearest(at[0], at[1], 0, 0, 3, 0); Dh.push(r0 ? [r0.x, r0.y] : at.slice()); Sw.push(0); continue; }
+      const best = densest(st), own = groupAt(st, prev, Math.max(1.2, 1.5 * Lz[k] + 0.5));
+      let sw = 0, target;
+      if (own.w > 0 && own.w >= RPq.keep * best.w) target = own.c;
+      else { sw = (k ? Sw[k - 1] : 0) + 1; target = sw >= RPq.after || !own.c ? best.c : own.c; }
+      const lim = Math.max(0.35, RPq.limK * Lz[k] + RPq.limB), d = Math.hypot(target[0] - prev[0], target[1] - prev[1]);
+      let p = target;
+      if (d > lim){ const rt = route(map, prev, target); p = rt ? along(rt.path, lim) : [prev[0] + (target[0] - prev[0]) * lim / d, prev[1] + (target[1] - prev[1]) * lim / d]; }
+      const q2 = nearest(p[0], p[1], 0, 0, 1.5, 0); if (q2) p = [q2.x, q2.y];
+      Dh.push(p); Sw.push(sw);
+    }
+  }
+  if (cache){ cache.sig = sig; cache.map = map; cache.ST = ST; cache.H = H.slice(); cache.L = Lz.slice(); cache.M = Array.from({ length: n }, (_, k) => String(markAt.get(k + 1) || '')); cache.Dh = Dh; cache.Sw = Sw; cache.Dn = n; }
   // the best guess: the one with the most weight around it
   const last = ST[n - 1];
   let bj = 0, bw = -1;
@@ -1543,6 +1778,17 @@ function railTrack(map, w, cfg, cache){
   const straight = new Array(n + 1), onMap = new Array(n), segOf = new Array(n + 1);
   for (let k = n - 1, j = bj; k >= 0; k--){ straight[k + 1] = [ST[k].X[j], ST[k].Y[j]]; onMap[k] = !ST[k].OFF[j]; segOf[k + 1] = ST[k].SG[j]; j = ST[k].A[j]; }
   straight[0] = start; segOf[0] = -1;
+  if (steady){
+    // the trail: where the dot has been, along the map between one step and the next
+    const sd = [start].concat(Dh.map(p => p.slice())), dr = [sd[0]];
+    for (let k = 1; k <= n; k++){
+      if (markAt.has(k)){ dr.push(null, sd[k]); continue; }
+      const a = sd[k - 1], b = sd[k], mid = nearest((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, 0, 0, 0.25, 0);
+      if (!mid && Math.hypot(b[0] - a[0], b[1] - a[1]) > 0.3){ const rt = route(map, a, b); if (rt) for (const v of rt.path.slice(1, -1)) dr.push(v.slice()); }
+      dr.push(b);
+    }
+    return { hs: hsEff, lens, raw: rawEff, straight: sd, drawn: dr, events, rot: rotEff, onMap };
+  }
   // draw turns through the map's corner, not across it; where you said where you are, the trail jumps (a gap, null)
   const drawn = [straight[0]];
   for (let k = 1; k <= n; k++){
@@ -1697,7 +1943,9 @@ const S = {
   railCache:{},        // the live tracker's work so far, so each step only adds a little
   dropSeen:null,       // marks the map left out as wrong taps, already told about
   offMap:false,        // Live: your last steps don't fit the map
-  markI:0              // the step count when you opened Mark place
+  markI:0,             // the step count when you opened Mark place
+  goal:null, nav:null, // Live: the place you're going to, and the route there (path, what to do next)
+  camA:null, camHead:null   // a live camera walk: its last lining-up on the map; which way the camera looks
 };
 if (!(S.join in JOIN)) S.join = 'normal';
 const takeWalk = () => { const o = {}; for (const k of WALK) o[k] = S[k]; return o; };
@@ -1925,9 +2173,22 @@ const liveCfg = () => ({ stride:S.stride, adaptive:S.adaptive, snap:S.snap, sour
 function recompute(){
   if (S.mode === 'live'){
     const m = mapPaths();
+    if (S.cam.length && hasMap() && m.lines.length){        // with the camera: the walk lined up on the map
+      const L = camLive(m);
+      if (L){
+        const straight = L.straight.length ? L.straight.slice(0, -1).concat([L.dot]) : [L.dot];
+        // (the trail drawn with your hand's sway evened out over half a second)
+        const sm = L.drawn.map((p, k) => { if (!p) return null; let x = 0, y = 0, c = 0; for (let i = k - 2; i <= k + 2; i++){ const q = L.drawn[i]; if (q){ x += q[0]; y += q[1]; c++; } } return [x / c, y / c]; });
+        S.cache = { hs: [], lens: [], raw: sm, straight, drawn: sm, events: { uturns: 0, joins: 0 }, rot: L.rot, onMap: [L.onMap, L.onMap], cam: true };
+        S.offMap = !L.onMap;
+        updateNav(m, L.dot);
+        return;
+      }
+    }
     S.cache = hasMap() && m.lines.length ? railTrack(m, S, liveCfg(), S.railCache) : computePaths(S, liveCfg());
     const om = S.cache.onMap || [], k = om.length;
     S.offMap = k >= 2 && !om[k - 1] && !om[k - 2];   // two steps in a row that don't fit anywhere on the map
+    const st = S.cache.straight; updateNav(m, st[st.length - 1]);
     return;
   }
   // this walk, its marks pinned to where the map has those places (so tapping Kitchen door puts you at the Kitchen
@@ -1954,9 +2215,44 @@ function recompute(){
   }
   S.seen = { uturns: Math.max(S.seen.uturns, ev.uturns), joins: Math.max(S.seen.joins, ev.joins) };
 }
+// Where you're going: the route from where you are (on the map) to the place, and what to do next. Arriving says so,
+// buzzes, and ends the route a few seconds later.
+function setGoal(nm){
+  S.goal = nm; S.nav = null; S.arrivedAt = 0;
+  const M = mapPaths(), st = S.cache.straight, here = st[st.length - 1];
+  if (nm) updateNav(M, CAM && S.camA ? (camLive(M) || {}).dot || here : here);
+  ui();
+  if (nm && !S.nav) toast('No way to ' + nm + ' along the map from here');
+}
+let navT = 0;
+function updateNav(M, here){
+  if (!S.goal || !here || !M){ S.nav = null; return; }
+  const now = performance.now(); if (S.nav && now - navT < 250) return; navT = now;
+  const to = S.goal === 'S' ? [0, 0] : M.places && M.places[S.goal];
+  if (!to){ S.goal = null; S.nav = null; return; }
+  const from = snapOnMap(M, here, 3) || here, rt = route(M, from, to), st = routeSteps(rt, S.goal);
+  S.nav = rt ? { rt, st } : null;
+  if (st && st.arrived && !S.arrivedAt){
+    S.arrivedAt = now;
+    if (typeof navigator.vibrate === 'function' && !CAM) try { navigator.vibrate([60, 60, 60]); } catch(e){}
+    const g = S.goal; setTimeout(() => { if (S.goal === g && S.arrivedAt){ S.goal = null; S.nav = null; ui(); } }, 4000);
+  }
+}
+$('navStop').onclick = () => { S.goal = null; S.nav = null; ui(); };
+$('btnGo').onclick = () => {
+  const names = Object.keys(mapPaths().places || {}), list = $('placeList');
+  list.textContent = '';
+  const add = nm => { const x = document.createElement('button'); x.textContent = nm; if (nm === 'S') x.className = 'start'; x.onclick = () => { openPlaces(false); $('placeTitle').textContent = 'Where are you?'; setGoal(nm); }; list.appendChild(x); };
+  add('S'); names.forEach(add);
+  $('placeTitle').textContent = 'Where to?';
+  $('placeHint').textContent = names.length ? 'The route follows the paths on your map, from where your dot is.' : 'Your map has no named places yet: mark them on the Map tab. You can still go back to S.';
+  $('placeNewRow').hidden = true; $('placeUndo').hidden = true;
+  openPlaces(true);
+};
 // Which way you're facing now, in the frame on screen (the first map walk's)
 function liveRel(){
   const st = S.steps, rot = S.cache.rot || 0;
+  if (S.mode === 'live' && S.cam.length && S.camHead != null) return wrap(S.camHead + rot);   // (the camera's own heading, lined up)
   if (S.source === 'compass' && S.liveC != null){
     const rc = S.refC != null ? S.refC : (st.find(s => s.c != null) || {}).c;
     if (rc != null) return wrap(S.liveC - rc + rot);
@@ -2050,6 +2346,15 @@ function draw(){
       for (let i = 1; i < p.pts.length - 1; i++){ ctx.beginPath(); ctx.arc(sx(p.pts[i][0]), sy(p.pts[i][1]), 1.8, 0, TAU); ctx.fill(); }
     }
     ctx.globalAlpha = 1;
+  }
+
+  // the route, if you're going somewhere
+  if (live && S.nav && S.nav.rt){
+    const rp = S.nav.rt.path;
+    ctx.strokeStyle = COL.raw; ctx.lineWidth = 5; ctx.globalAlpha = .95; ctx.setLineDash([10, 7]);
+    ctx.beginPath(); rp.forEach((q, i) => i ? ctx.lineTo(sx(q[0]), sy(q[1])) : ctx.moveTo(sx(q[0]), sy(q[1]))); ctx.stroke();
+    ctx.setLineDash([]); ctx.globalAlpha = 1;
+    const e = rp[rp.length - 1]; ctx.strokeStyle = COL.raw; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(sx(e[0]), sy(e[1]), 13, 0, TAU); ctx.stroke();
   }
 
   // places you marked: where the walks agree they are. Names go beside, above or below their pin, wherever they
@@ -2163,7 +2468,20 @@ function ui(throttled){
   b.textContent = S.recording ? 'Stop' : camW ? (S.maps.length < MAXWALKS && !live ? 'New walk' : 'Done') : (n ? 'Resume' : 'Start');
   b.classList.toggle('rec', S.recording);
   const empty = !(has || S.recording);
-  $('camBtn').hidden = !(empty && !live && S.ar);
+  $('camBtn').hidden = !(empty && S.ar && (!live || !noMap));
+  if (!$('camBtn').hidden){ const lb = $('camBtn').lastChild; const want = live ? 'Track with the camera' : 'Map with the camera'; if (lb.textContent !== want) lb.textContent = want; }
+  const navOn = live && !!S.goal && !!(S.nav && S.nav.st);
+  $('btnGo').hidden = !live || noMap || empty;
+  $('navChip').hidden = !navOn;
+  document.body.classList.toggle('navon', navOn);
+  if (navOn){
+    const st = S.nav.st, key = st.say + '|' + st.left.toFixed(1);
+    if ($('navText').dataset.k !== key){
+      $('navText').dataset.k = key; $('navText').textContent = st.say;
+      if (!st.arrived && st.turns.length){ const sm = document.createElement('small'); sm.textContent = S.goal + ' · ' + st.left.toFixed(1) + ' m to go'; $('navText').appendChild(sm); }
+    }
+    $('navChip').classList.toggle('done', !!st.arrived);
+  }
   $('empty').hidden = !empty;
   if (empty){
     const later = !live && S.sel > 0;
@@ -2202,7 +2520,7 @@ function ui(throttled){
   $('buzzField').hidden = typeof navigator.vibrate !== 'function';
   $('magField').hidden = !ANDROID && typeof Magnetometer !== 'function';
   $('magCopy').hidden = !ANDROID || typeof Magnetometer === 'function';
-  $('camHint').textContent = S.ar ? 'On an empty walk (Walk 1, or + Walk), tap Map with the camera. Hold the phone up, camera facing where you walk, and walk your route: Chrome follows the phone with ARCore (the camera and motion sensors together), to within centimetres, so one walk makes the map. Mark places as you go. If your steps are counted on the way, they also set your stride for Live.'
+  $('camHint').textContent = S.ar ? 'On an empty walk (Walk 1, or + Walk), tap Map with the camera. Hold the phone up, camera facing where you walk, and walk your route: Chrome follows the phone with ARCore (the camera and motion sensors together), to within centimetres, so one walk makes the map. Mark places as you go. On the Live tab, Track with the camera does the same for finding your way: your dot lines up with the map after a couple of metres, and Go to gives you a route.'
     : S.ar === false ? 'Not available on this phone or browser. It needs Chrome on an ARCore phone with Google Play Services for AR (from the Play Store). Step walks still work.'
     : 'Checking whether this phone can do it…';
   $('magHint').textContent = typeof Magnetometer !== 'function'
@@ -2252,10 +2570,15 @@ $('xr').addEventListener('beforexrselect', e => e.preventDefault());   // taps o
 
 async function startCam(){
   if (S.recording || CAM) return;
-  if (S.mode !== 'map'){ toast('Camera walks make the map: open the Map tab'); return; }
-  if (hasWalk(S)){ toast('This walk already has something on it. Tap + Walk for a camera walk.'); return; }
+  const live = S.mode === 'live';
+  if (live && !hasMap()){ toast('Make your map on the Map tab first'); return; }
+  if (hasWalk(S)){ toast(live ? 'Clear this live walk first, then track with the camera.' : 'This walk already has something on it. Tap + Walk for a camera walk.'); return; }
   const root = $('xr');
-  root.hidden = false; xrPlaces(false); $('xrHint').hidden = false; $('xrSay').hidden = true;
+  root.hidden = false; xrPlaces(false); $('xrHint').hidden = false; $('xrSay').hidden = true; $('xrNav').hidden = true;
+  $('xrGo').hidden = !live;
+  $('xrHint').textContent = live ? 'Stand at S, hold the phone up and walk. Not at S? Tap Mark place first and say where you are. Your dot lines up with the map within a couple of metres.'
+    : 'Hold the phone up, camera facing where you walk. Walk at your normal pace and turn slowly, keeping the camera on the room rather than a blank wall. Tap Mark place in each doorway.';
+  S.camA = null; xrSaidOnce = '';
   $('xrStatus').textContent = 'Starting the camera…'; $('xrStatus').className = 'xr-chip finding';
   let session;
   try {
@@ -2346,7 +2669,7 @@ function camFrame(time, frame){
   if (!C.origin){ const l = Math.hypot(fx, fz) || 1; C.origin = [p.x, p.z]; C.u = [fx / l, fz / l]; if (S.camC != null) S.refC = S.camC; }
   const u = C.u, r = [-u[1], u[0]], dx = p.x - C.origin[0], dz = p.z - C.origin[1];   // (right = forward × up)
   const X = dx * r[0] + dz * r[1], Y = dx * u[0] + dz * u[1];
-  C.head = Math.atan2(fx * r[0] + fz * r[1], fx * u[0] + fz * u[1]);
+  C.head = Math.atan2(fx * r[0] + fz * r[1], fx * u[0] + fz * u[1]); S.camHead = C.head;
   if (C.state !== 'ok' && !C.everOk){ C.everOk = true; xrSay('Tracking. Walk your route now.'); }
   C.state = 'ok';
   const t = Date.now() - S.walkStart;
@@ -2373,6 +2696,7 @@ function camDraw(){
   if ((C.len || 0) > 4) $('xrHint').hidden = true;
   const c = $('xrMap'), rr = sizeCanvas(c), W = rr.width, H = rr.height, g = c.getContext('2d');
   g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+  if (S.mode === 'live'){ camDrawLive(g, W, H); return; }
   const pts = S.cam;
   let x0 = -2, x1 = 2, y0 = -2, y1 = 2;
   for (const e of pts){ if (!e) continue; if (e[1] < x0) x0 = e[1]; if (e[1] > x1) x1 = e[1]; if (e[2] < y0) y0 = e[2]; if (e[2] > y1) y1 = e[2]; }
@@ -2407,15 +2731,74 @@ function camDraw(){
     g.beginPath(); g.arc(X, Y, 6.5, 0, TAU); g.fill(); g.stroke();
   }
 }
+// Live with the camera: your map, the walk lined up on it, the dot, and the route if you're going somewhere
+function camDrawLive(g, W, H){
+  const C = CAM, M = mapPaths(), L = camLive(M);
+  if (!L) return;
+  updateNav(M, L.dot);
+  const nv = $('xrNav'), st = S.nav && S.nav.st;
+  nv.hidden = !st;
+  if (st){ const html = st.say + (st.arrived || !st.turns.length ? '' : ' · ' + S.goal + ' ' + st.left.toFixed(1) + ' m'); if (nv.textContent !== html) nv.textContent = html; nv.classList.toggle('done', !!st.arrived); }
+  // the view: the whole map, with you on it
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const ln of M.lines) for (const p of ln){ if (!p) continue; x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]); }
+  for (const p of [L.dot, [0, 0]]){ x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]); }
+  if (!isFinite(x0)) return;
+  if (x1 - x0 < 4){ const m = (x0 + x1) / 2; x0 = m - 2; x1 = m + 2; } if (y1 - y0 < 4){ const m = (y0 + y1) / 2; y0 = m - 2; y1 = m + 2; }
+  const pad = 20, sc = Math.min((W - 2 * pad) / (x1 - x0), (H - 2 * pad) / (y1 - y0));
+  const sx = x => W / 2 + (x - (x0 + x1) / 2) * sc, sy = y => H / 2 - (y - (y0 + y1) / 2) * sc;
+  const line = (pts, w, col, a) => { g.globalAlpha = a; g.strokeStyle = col; g.lineWidth = w; g.beginPath(); let pen = false; for (const p of pts){ if (!p){ pen = false; continue; } if (pen) g.lineTo(sx(p[0]), sy(p[1])); else g.moveTo(sx(p[0]), sy(p[1])); pen = true; } g.stroke(); g.globalAlpha = 1; };
+  g.lineJoin = 'round'; g.lineCap = 'round';
+  for (const ln of M.lines){ line(ln, Math.max(8, 0.8 * sc), COL.muted, .25); line(ln, 1.5, COL.muted, .7); }
+  if (S.nav && S.nav.rt) line(S.nav.rt.path, 4, COL.raw, 1);
+  line(L.drawn, 2.5, COL.straight, .9);
+  g.font = '600 10.5px ' + C.font; g.textBaseline = 'middle'; g.textAlign = 'left';
+  for (const [nm, p] of Object.entries(M.places || {})){
+    const X = sx(p[0]), Y = sy(p[1]);
+    g.fillStyle = COL.raw; g.beginPath(); g.moveTo(X, Y - 6); g.lineTo(X + 5, Y); g.lineTo(X, Y + 6); g.lineTo(X - 5, Y); g.closePath(); g.fill();
+    if (nm === S.goal){ g.strokeStyle = COL.raw; g.lineWidth = 2; g.beginPath(); g.arc(X, Y, 11, 0, TAU); g.stroke(); }
+    g.fillStyle = COL.text; g.fillText(nm, X + 8, Y);
+  }
+  g.strokeStyle = COL.text; g.lineWidth = 2; g.fillStyle = COL.ink; g.beginPath(); g.arc(sx(0), sy(0), 7, 0, TAU); g.fill(); g.stroke();
+  g.fillStyle = COL.text; g.font = '700 8px ' + C.font; g.textAlign = 'center'; g.fillText('S', sx(0), sy(0) + .5);
+  const X = sx(L.dot[0]), Y = sy(L.dot[1]);
+  if (L.by !== 'start'){ g.save(); g.translate(X, Y); g.rotate(wrap((S.camHead || 0) + L.rot)); g.fillStyle = 'rgba(230,238,247,.35)'; g.beginPath(); g.moveTo(0, 0); g.arc(0, 0, 30, -Math.PI / 2 - .4, -Math.PI / 2 + .4); g.closePath(); g.fill(); g.restore(); }
+  g.fillStyle = C.state !== 'ok' ? COL.rec : L.by === 'start' ? COL.muted : COL.straight; g.strokeStyle = COL.ink; g.lineWidth = 2;
+  g.beginPath(); g.arc(X, Y, 7, 0, TAU); g.fill(); g.stroke();
+  if (L.by === 'start' && C.state === 'ok') xrSayOnce('Walk a few steps: your dot lines up with the map');
+}
+// A live camera walk on the map. Lining it up searches turns, so it's done again only every second or so of walking
+// (or when you mark a place); in between, new readings follow the last lining-up.
+function camLive(M){
+  const c = S.cam, A = S.camA, n = c.length;
+  if (!n || !M || !M.lines.length) return null;
+  if (!A || A.map !== M || n < A.n || n - A.n >= 10 || A.marks !== S.places.length){
+    const r = camAlign(M, S); if (!r) return null;
+    S.camA = { map: M, n, marks: S.places.length, r };
+    return r;
+  }
+  const r = A.r;
+  let k = n - 1; while (k >= 0 && !c[k]) k--;
+  if (k < 0) return r;
+  const e = c[k], m = r.by === 'start' ? r.P0 : (q => [q[0] + r.off[0], q[1] + r.off[1]])(turn([e[1] - r.at0[0], e[2] - r.at0[1]], r.rot));
+  const tail = c.slice(A.n).map(x => !x ? null : r.by === 'start' ? r.P0.slice() : (q => [q[0] + r.off[0], q[1] + r.off[1]])(turn([x[1] - r.at0[0], x[2] - r.at0[1]], r.rot)));
+  const q = snapOnMap(M, m, 1.2);
+  return Object.assign({}, r, { drawn: r.drawn.concat(tail), dot: q || m, onMap: !!q, raw: m });
+}
+let xrSaidOnce = '';
+function xrSayOnce(msg){ if (xrSaidOnce !== msg){ xrSaidOnce = msg; xrSay(msg); } }
 let xrSayT;
 function xrSay(msg){ const e = $('xrSay'); e.textContent = msg; e.hidden = false; clearTimeout(xrSayT); xrSayT = setTimeout(() => e.hidden = true, 2600); }
 // Mark place, on the camera panel (the usual sheet is behind the camera view)
-function xrPlaces(on){
+function xrPlaces(on, go){
   $('xrPlaces').hidden = !on; $('xrBottom').hidden = on; $('xrMap').hidden = on;
   if (!on){ $('xrPlNew').blur(); return; }
-  const list = $('xrPlList'); list.textContent = '';
-  for (const nm of placeNames()){ const b = document.createElement('button'); b.className = 'btn small'; b.textContent = nm; b.onclick = () => camMark(nm); list.appendChild(b); }
-  $('xrPlUndo').hidden = !S.places.length;
+  const live = S.mode === 'live', names = live ? Object.keys(mapPaths().places || {}) : placeNames(), list = $('xrPlList');
+  list.textContent = '';
+  $('xrPlTitle').textContent = go ? 'Where to?' : 'Where are you?';
+  for (const nm of (go ? ['S'].concat(names) : names)){ const b = document.createElement('button'); b.className = 'btn small'; b.textContent = nm; b.onclick = () => go ? (setGoal(nm), xrPlaces(false)) : camMark(nm); list.appendChild(b); }
+  $('xrPlUndo').hidden = go || !S.places.length;
+  $('xrPlNew').parentElement.hidden = go || live;      // (on Live you say where you are among the map's places)
   $('xrPlNew').value = '';
 }
 function camMark(nm){
@@ -2426,6 +2809,7 @@ function camMark(nm){
   xrPlaces(false); xrSay('Marked ' + nm); saveSoon();
 }
 $('xrMark').onclick = () => xrPlaces(true);
+$('xrGo').onclick = () => xrPlaces(true, true);
 $('xrPlCancel').onclick = () => xrPlaces(false);
 $('xrPlAdd').onclick = () => camMark($('xrPlNew').value);
 $('xrPlNew').onkeydown = e => { if (e.key === 'Enter'){ e.preventDefault(); camMark($('xrPlNew').value); } };
@@ -2440,6 +2824,7 @@ function camEnded(){
   while (S.cam.length && !S.cam[S.cam.length - 1]) S.cam.pop();
   if (S.recording) stop();
   S.merged = null;
+  if (S.mode === 'live'){ recompute(); ui(); toast('Camera tracking ended'); return; }
   // your stride, from how far the camera says you went (the path with your hand's sway smoothed out) over the steps
   // counted on the way
   const n = S.steps.length, len = camLength(S.cam);
@@ -2526,8 +2911,9 @@ function placeNames(){
   for (const w of mapWalks()) for (const p of w.places) if (!seen.includes(p.name)) seen.push(p.name);
   return seen;
 }
-const openPlaces = on => { $('placeSheet').hidden = !on; $('placeBg').hidden = !on; };
+const openPlaces = on => { $('placeSheet').hidden = !on; $('placeBg').hidden = !on; if (!on) setTimeout(() => { $('placeTitle').textContent = 'Where are you?'; }, 300); };
 $('btnMark').onclick = () => {
+  $('placeTitle').textContent = 'Where are you?';
   S.markI = S.steps.length;
   const live = S.mode === 'live', names = live ? Object.keys(mapPaths().places || {}) : placeNames(), list = $('placeList');
   list.textContent = '';
